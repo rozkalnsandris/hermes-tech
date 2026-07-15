@@ -21,8 +21,8 @@ TITLE="What mattered in DevOps yesterday — $DATE"
   echo "images: [\"/og/${DATE}.png\"]"
   echo "---"
   echo
-  # Izmetam pirmo H1 rindu, ja tā dublē virsrakstu
-  sed '1{/^# /d}' "$SRC"
+  # Izmetam pirmo H1 vai H2 rindu, ja tā dublē virsrakstu
+  sed '1{/^#\{1,2\} /d}' "$SRC"
 } > "$DST"
 
 "$BASE/venv/bin/python" "$BASE/ogcard.py" "$DATE" "$TITLE"
