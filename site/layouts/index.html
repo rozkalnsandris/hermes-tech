@@ -1,0 +1,12 @@
+{{ define "main" }}
+<div class="card">
+{{ .Content }}
+</div>
+<h2>Latest digests</h2>
+{{ range first 10 (where site.RegularPages "Section" "digest") }}
+<div class="card">
+  <h2><a href="{{ .Permalink }}">{{ .Title }}</a></h2>
+  <p class="meta">{{ .Date.Format "2006-01-02" }} · AI-generated, human-reviewed</p>
+</div>
+{{ end }}
+{{ end }}

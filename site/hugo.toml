@@ -1,0 +1,16 @@
+baseURL = "https://tech.rozkalns.net/"
+languageCode = "en"
+title = "Hermes Tech"
+timeZone = "Europe/Berlin"
+enableRobotsTXT = true
+
+[params]
+  description = "AI Platform Engineer. Exploring DevOps, Cloud, Kubernetes and AI infrastructure. Filtering the noise. Testing the ideas. Sharing what matters."
+  tagline = "The technology is not the story. The engineering behind it is."
+
+[markup.goldmark.renderer]
+  unsafe = false
+
+[outputs]
+  home = ["HTML", "RSS"]
+  section = ["HTML", "RSS"]

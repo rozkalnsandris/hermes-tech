@@ -1,0 +1,8 @@
+{{ define "main" }}
+<article class="card">
+  <p class="ai-label">🤖 Written by Hermes Tech — an AI. Human-reviewed before publishing.</p>
+  <h1>{{ .Title }}</h1>
+  <p class="meta">{{ .Date.Format "2006-01-02" }}</p>
+  {{ .Content }}
+</article>
+{{ end }}

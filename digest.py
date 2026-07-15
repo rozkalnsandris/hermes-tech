@@ -32,6 +32,7 @@ FORBIDDEN = re.compile(
 )
 
 MAX_ARTICLES_IN = 60      # cik rakstus dodam modelim izvēlei
+MAX_OUT_TOKENS = 5000     # 2500 bija par maz — JSON tika nogriezts
 MAX_TG_CHUNK = 3900       # Telegram ziņas limits ir 4096
 
 
@@ -89,7 +90,7 @@ def call_deepseek(api_key: str, system: str, user: str) -> str:
         json={
             "model": MODEL,
             "temperature": 0.4,
-            "max_tokens": 2500,
+            "max_tokens": MAX_OUT_TOKENS,
             "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": system},
@@ -101,10 +102,17 @@ def call_deepseek(api_key: str, system: str, user: str) -> str:
     resp.raise_for_status()
     data = resp.json()
     usage = data.get("usage", {})
+    choice = data["choices"][0]
+    finish = choice.get("finish_reason", "")
     log(f"Tokeni: in={usage.get('prompt_tokens')} "
         f"(cache hit={usage.get('prompt_cache_hit_tokens')}) "
-        f"out={usage.get('completion_tokens')}")
-    return data["choices"][0]["message"]["content"]
+        f"out={usage.get('completion_tokens')} finish={finish}")
+    if finish == "length":
+        raise RuntimeError(
+            f"Atbilde nogriezta pie {MAX_OUT_TOKENS} tokeniem — "
+            "palielini MAX_OUT_TOKENS vai samazini MAX_ARTICLES_IN"
+        )
+    return choice["message"]["content"]
 
 
 def build_user_prompt(today: str, articles: list[dict], retry_note: str = "") -> str:
