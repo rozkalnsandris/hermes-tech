@@ -1,0 +1,15 @@
+# Hermes Tech RSS avoti — formāts: nosaukums|URL
+# Rindas ar # tiek ignorētas. Avotu var izslēgt, pieliekot # priekšā.
+kubernetes|https://kubernetes.io/feed.xml
+docker|https://www.docker.com/blog/feed/
+cncf|https://www.cncf.io/feed/
+github|https://github.blog/feed/
+aws|https://aws.amazon.com/about-aws/whats-new/recent/feed/
+googlecloud|https://cloudblog.withgoogle.com/rss/
+grafana|https://grafana.com/blog/index.xml
+hashicorp|https://www.hashicorp.com/blog/feed.xml
+redhat|https://www.redhat.com/en/rss/blog
+ubuntu|https://ubuntu.com/blog/feed
+hackernews|https://hnrss.org/frontpage?points=100
+r_devops|https://www.reddit.com/r/devops/top/.rss?t=day
+devto_devops|https://dev.to/feed/tag/devops
