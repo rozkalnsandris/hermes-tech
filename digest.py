@@ -6,6 +6,7 @@ Jaunumi: kategoriju atbalsts + faktu pārbaudes atruna promptā.
 import json
 import re
 import sqlite3
+import subprocess
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -41,6 +42,8 @@ CATS = {
         "label": "🤖 AGENTS",
     },
 }
+
+SECTIONS = {"devops": "digest", "ai": "ai", "agents": "agents"}
 
 FORBIDDEN = re.compile(
     r"\b(revolutionary|game[- ]?chang\w*|amazing|incredible|"
@@ -270,9 +273,30 @@ def main() -> int:
     out.write_text(digest + "\n")
     log(f"[{cat}] Digest saglabāts: {out}")
 
-    header = (f"{warning}{CATS[cat]['label']} Hermes Tech — {today}\n"
-              f"(APSTIPRINĀŠANAI: publish.sh {cat} {today})\n\n")
-    send_telegram(env, header + digest)
+    published = False
+    publish_note = ""
+    if warning:
+        # Aizliegtie vārdi palika arī pēc retry — NEpublicējam automātiski
+        publish_note = ("\n🚫 NAV publicēts automātiski — aizliegtie vārdi "
+                         "palika arī pēc pārrakstīšanas. Pārbaudi manuāli:\n"
+                         f"~/hermes-tech/publish.sh {cat} {today}")
+        log(f"[{cat}] Auto-publish IZLAISTS (aizliegtie vārdi palika)")
+    else:
+        try:
+            subprocess.run(
+                [str(BASE / "publish.sh"), cat, today],
+                check=True, capture_output=True, text=True, timeout=60,
+            )
+            published = True
+            publish_note = f"\n✅ Publicēts: https://tech.rozkalns.net/{SECTIONS[cat]}/{today}/"
+            log(f"[{cat}] Auto-publish OK")
+        except subprocess.CalledProcessError as exc:
+            publish_note = (f"\n⚠️ Auto-publish NEIZDEVĀS: {exc.stderr[:300]}\n"
+                            f"Manuāli: ~/hermes-tech/publish.sh {cat} {today}")
+            log(f"[{cat}] Auto-publish KĻŪDA: {exc.stderr[:300]}")
+
+    header = f"{warning}{CATS[cat]['label']} Hermes Tech — {today}\n"
+    send_telegram(env, header + digest + publish_note)
     ping_healthcheck(env)
     conn.close()
     return 0
