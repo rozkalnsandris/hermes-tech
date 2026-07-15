@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Hermes Tech — RSS collector.
-Savāc rakstus no feeds.txt, deduplicē pēc linka, glabā SQLite.
-Palaiž cron vairākas reizes dienā. Kļūdas tiek logotas, nevis apturētas.
+"""Hermes Tech — RSS collector v3.
+Jaunumi: kategorijas (devops/ai/agents) + pilnā satura glabāšana.
+Migrācija: automātiski pievieno category/content kolonnas vecai DB.
 """
+import re
 import sqlite3
 import sys
 import time
@@ -16,7 +17,9 @@ DB = BASE / "data" / "hermes.db"
 FEEDS = BASE / "feeds.txt"
 LOG = BASE / "logs" / "collector.log"
 
-feedparser.USER_AGENT = "HermesTech/1.0 (+https://rozkalns.net)"
+MAX_CONTENT = 40000  # rakstzīmes pilnajam tekstam
+
+feedparser.USER_AGENT = "HermesTech/1.0 (+https://tech.rozkalns.net)"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS articles (
@@ -39,6 +42,12 @@ CREATE TABLE IF NOT EXISTS sources (
 CREATE INDEX IF NOT EXISTS idx_articles_fetched ON articles(fetched_at);
 """
 
+MIGRATIONS = [
+    "ALTER TABLE articles ADD COLUMN category TEXT DEFAULT 'devops'",
+    "ALTER TABLE articles ADD COLUMN content TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_articles_cat ON articles(category)",
+]
+
 
 def log(msg: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {msg}"
@@ -48,24 +57,45 @@ def log(msg: str) -> None:
         f.write(line + "\n")
 
 
-def load_feeds() -> list[tuple[str, str]]:
+def migrate(conn) -> None:
+    for stmt in MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass  # kolonna/indekss jau eksistē
+    conn.commit()
+
+
+def load_feeds() -> list[tuple[str, str, str]]:
     feeds = []
     for raw in FEEDS.read_text().splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "|" not in line:
             continue
-        name, url = line.split("|", 1)
-        feeds.append((name.strip(), url.strip()))
+        parts = [p.strip() for p in line.split("|")]
+        name, url = parts[0], parts[1]
+        cat = parts[2] if len(parts) > 2 and parts[2] else "devops"
+        feeds.append((name, url, cat))
     return feeds
 
 
-def entry_summary(entry) -> str:
-    text = getattr(entry, "summary", "") or ""
-    # Noņemam HTML tagus rupji un apgriežam
-    import re
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text[:500]
+def strip_html(text: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", text or "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def entry_texts(entry) -> tuple[str, str]:
+    """Atgriež (summary_500, full_content). Pilnais: content > summary."""
+    full = ""
+    if getattr(entry, "content", None):
+        try:
+            full = entry.content[0].value or ""
+        except (IndexError, AttributeError):
+            full = ""
+    if not full:
+        full = getattr(entry, "summary", "") or ""
+    full = strip_html(full)[:MAX_CONTENT]
+    return full[:500], full
 
 
 def entry_published(entry) -> str:
@@ -80,11 +110,12 @@ def main() -> int:
     DB.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB)
     conn.executescript(SCHEMA)
+    migrate(conn)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_new = 0
 
-    for name, url in load_feeds():
+    for name, url, cat in load_feeds():
         conn.execute("INSERT OR IGNORE INTO sources(name) VALUES (?)", (name,))
         try:
             parsed = feedparser.parse(url)
@@ -96,11 +127,14 @@ def main() -> int:
                 title = (getattr(e, "title", "") or "").strip()
                 if not link or not title:
                     continue
+                summary, content = entry_texts(e)
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO articles"
-                    "(source, title, link, published, summary, fetched_at)"
-                    " VALUES (?,?,?,?,?,?)",
-                    (name, title, link, entry_published(e), entry_summary(e), now),
+                    "(source, title, link, published, summary, fetched_at,"
+                    " category, content)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (name, title, link, entry_published(e), summary, now,
+                     cat, content),
                 )
                 new += cur.rowcount
             conn.execute(
@@ -109,13 +143,13 @@ def main() -> int:
                 (new, name),
             )
             total_new += new
-            log(f"OK   {name}: +{new} jauni ({len(parsed.entries)} feedā)")
-        except Exception as exc:  # noqa: BLE001 — vienam feedam krītot, pārējie turpina
+            log(f"OK   [{cat}] {name}: +{new} jauni ({len(parsed.entries)} feedā)")
+        except Exception as exc:  # noqa: BLE001
             conn.execute(
                 "UPDATE sources SET fetch_fail = fetch_fail + 1 WHERE name = ?",
                 (name,),
             )
-            log(f"FAIL {name}: {exc}")
+            log(f"FAIL [{cat}] {name}: {exc}")
         conn.commit()
 
     conn.close()

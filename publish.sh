@@ -1,35 +1,44 @@
 #!/usr/bin/env bash
 # Hermes Tech — digest publicēšana blogā (approval solis)
-# Lietošana: publish.sh [YYYY-MM-DD]   (bez argumenta = šodiena UTC)
+# Lietošana: publish.sh <devops|ai|agents> [YYYY-MM-DD]
 set -euo pipefail
 
 BASE="$HOME/hermes-tech"
-DATE="${1:-$(date -u +%Y-%m-%d)}"
-SRC="$BASE/digests/$DATE.md"
-DST_DIR="$BASE/site/content/digest"
+CAT="${1:?Lietošana: publish.sh <devops|ai|agents> [YYYY-MM-DD]}"
+DATE="${2:-$(date -u +%Y-%m-%d)}"
+
+case "$CAT" in
+    devops) SECTION="digest"; TITLE="What mattered in DevOps yesterday — $DATE" ;;
+    ai)     SECTION="ai";     TITLE="What mattered in AI yesterday — $DATE" ;;
+    agents) SECTION="agents"; TITLE="What mattered in AI agents yesterday — $DATE" ;;
+    *) echo "KĻŪDA: nezināma kategorija '$CAT'"; exit 1 ;;
+esac
+
+SRC="$BASE/digests/$DATE-$CAT.md"
+# Atpakaļsaderība ar veco devops nosaukumu bez kategorijas
+[ -f "$SRC" ] || SRC="$BASE/digests/$DATE.md"
+[ -f "$SRC" ] || { echo "KĻŪDA: nav $BASE/digests/$DATE-$CAT.md"; exit 1; }
+
+DST_DIR="$BASE/site/content/$SECTION"
 DST="$DST_DIR/$DATE.md"
-
-[ -f "$SRC" ] || { echo "KĻŪDA: nav $SRC"; exit 1; }
 mkdir -p "$DST_DIR"
-
-TITLE="What mattered in DevOps yesterday — $DATE"
 
 {
   echo "---"
   echo "title: \"$TITLE\""
   echo "date: ${DATE}T07:00:00+02:00"
-  echo "images: [\"/og/${DATE}.png\"]"
+  echo "images: [\"/og/${DATE}-${CAT}.png\"]"
   echo "---"
   echo
   # Izmetam pirmo H1 vai H2 rindu, ja tā dublē virsrakstu
   sed '1{/^#\{1,2\} /d}' "$SRC"
 } > "$DST"
 
-"$BASE/venv/bin/python" "$BASE/ogcard.py" "$DATE" "$TITLE"
+"$BASE/venv/bin/python" "$BASE/ogcard.py" "$DATE-$CAT" "$TITLE"
 
 cd "$BASE/site"
 hugo --minify --quiet
-echo "Publicēts: https://tech.rozkalns.net/digest/$DATE/"
+echo "Publicēts: https://tech.rozkalns.net/$SECTION/$DATE/"
 
 cd "$BASE"
-git add -A && git commit -q -m "Publish digest $DATE" || true
+git add -A && git commit -q -m "Publish $CAT digest $DATE" || true

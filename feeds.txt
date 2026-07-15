@@ -1,52 +1,62 @@
-# Hermes Tech RSS avoti — formāts: nosaukums|URL
-# Rindas ar # tiek ignorētas. Avotu var izslēgt, pieliekot # priekšā.
-# collector.py automātiski loga FAIL, ja kāds URL vairs nestrādā —
-# pārbaudi logus pēc pirmās palaišanas un izslēdz/labo, kas nesader.
+# Hermes Tech RSS avoti — formāts: nosaukums|URL|kategorija
+# Kategorijas: devops, ai, agents. Ja kategorija nav norādīta — devops.
+# Rindas ar # tiek ignorētas.
 
-# --- Oriģinālie (Fāze 2) ---
-kubernetes|https://kubernetes.io/feed.xml
-docker|https://www.docker.com/blog/feed/
-cncf|https://www.cncf.io/feed/
-github|https://github.blog/feed/
-aws|https://aws.amazon.com/about-aws/whats-new/recent/feed/
-googlecloud|https://cloudblog.withgoogle.com/rss/
-grafana|https://grafana.com/blog/index.xml
-hashicorp|https://www.hashicorp.com/blog/feed.xml
-redhat|https://www.redhat.com/en/rss/blog
-ubuntu|https://ubuntu.com/blog/feed
-hackernews|https://hnrss.org/frontpage?points=100
-r_devops|https://www.reddit.com/r/devops/top/.rss?t=day
-devto_devops|https://dev.to/feed/tag/devops
+# ================= DEVOPS =================
+kubernetes|https://kubernetes.io/feed.xml|devops
+docker|https://www.docker.com/blog/feed/|devops
+cncf|https://www.cncf.io/feed/|devops
+github|https://github.blog/feed/|devops
+aws|https://aws.amazon.com/about-aws/whats-new/recent/feed/|devops
+googlecloud|https://cloudblog.withgoogle.com/rss/|devops
+grafana|https://grafana.com/blog/index.xml|devops
+hashicorp|https://www.hashicorp.com/blog/feed.xml|devops
+redhat|https://www.redhat.com/en/rss/blog|devops
+ubuntu|https://ubuntu.com/blog/feed|devops
+hackernews|https://hnrss.org/frontpage?points=100|devops
+r_devops|https://www.reddit.com/r/devops/top/.rss?t=day|devops
+devto_devops|https://dev.to/feed/tag/devops|devops
+lwkd|https://lwkd.info/feed.xml|devops
+prometheus|https://prometheus.io/blog/feed.xml|devops
+istio|https://istio.io/latest/feed.xml|devops
+r_kubernetes|https://www.reddit.com/r/kubernetes/top/.rss?t=day|devops
+cloudflare|https://blog.cloudflare.com/rss/|devops
+azure_updates|https://www.microsoft.com/en-us/microsoft-cloud/blog/feed/|devops
+datadog|https://www.datadoghq.com/blog/index.xml|devops
+elastic|https://www.elastic.co/blog/feed|devops
+snyk|https://snyk.io/blog/feed/|devops
+aquasec|https://blog.aquasec.com/rss.xml|devops
+netflix_eng|https://netflixtechblog.com/feed|devops
+slack_eng|https://slack.engineering/feed/|devops
+meta_eng|https://engineering.fb.com/feed/|devops
+thenewstack|https://thenewstack.io/feed/|devops
+devopscom|https://devops.com/feed/|devops
+infoq_devops|https://feed.infoq.com/devops/|devops
+sreweekly|https://sreweekly.com/feed/|devops
+#uber_eng|https://eng.uber.com/feed/|devops
 
-# --- Kubernetes / cloud-native niche (augsta signāla, zema trokšņa) ---
-lwkd|https://lwkd.info/feed.xml
-prometheus|https://prometheus.io/blog/feed.xml
-istio|https://istio.io/latest/feed.xml
-r_kubernetes|https://www.reddit.com/r/kubernetes/top/.rss?t=day
+# ================= AI =================
+openai|https://openai.com/news/rss.xml|ai
+anthropic|https://www.anthropic.com/news/rss.xml|ai
+huggingface|https://huggingface.co/blog/feed.xml|ai
+googleai|https://blog.google/technology/ai/rss/|ai
+deepmind|https://deepmind.google/blog/rss.xml|ai
+verge_ai|https://www.theverge.com/rss/ai-artificial-intelligence/index.xml|ai
+techcrunch_ai|https://techcrunch.com/category/artificial-intelligence/feed/|ai
+mit_tr_ai|https://www.technologyreview.com/topic/artificial-intelligence/feed|ai
+marktechpost|https://www.marktechpost.com/feed/|ai
+simonwillison|https://simonwillison.net/atom/everything/|ai
+r_localllama|https://www.reddit.com/r/LocalLLaMA/top/.rss?t=day|ai
+lastweekinai|https://lastweekin.ai/feed|ai
 
-# --- Cloud vendors, papildus ---
-cloudflare|https://blog.cloudflare.com/rss/
-azure_updates|https://www.microsoft.com/en-us/microsoft-cloud/blog/feed/
-
-# --- Observability / monitoring ---
-datadog|https://www.datadoghq.com/blog/index.xml
-elastic|https://www.elastic.co/blog/feed
-
-# --- Security / DevSecOps ---
-snyk|https://snyk.io/blog/feed/
-aquasec|https://blog.aquasec.com/rss.xml
-
-# --- Big tech engineering blogi ---
-netflix_eng|https://netflixtechblog.com/feed
-slack_eng|https://slack.engineering/feed/
-meta_eng|https://engineering.fb.com/feed/
-#uber_eng|https://eng.uber.com/feed/
-# ^ izslēgts: feeds tehniski derīgs, bet pastāvīgi 0 ierakstu — domēns novecojis
-
-# --- Agregatori / žurnālistika ---
-thenewstack|https://thenewstack.io/feed/
-devopscom|https://devops.com/feed/
-infoq_devops|https://feed.infoq.com/devops/
-
-# --- SRE ---
-sreweekly|https://sreweekly.com/feed/
+# ================= AGENTS =================
+hermes_agent_rel|https://github.com/NousResearch/hermes-agent/releases.atom|agents
+claude_code_rel|https://github.com/anthropics/claude-code/releases.atom|agents
+openclaw_rel|https://github.com/openclaw/openclaw/releases.atom|agents
+langchain_blog|https://blog.langchain.dev/rss/|agents
+langchain_rel|https://github.com/langchain-ai/langchain/releases.atom|agents
+crewai_rel|https://github.com/crewAIInc/crewAI/releases.atom|agents
+autogen_rel|https://github.com/microsoft/autogen/releases.atom|agents
+n8n_rel|https://github.com/n8n-io/n8n/releases.atom|agents
+latentspace|https://www.latent.space/feed|agents
+r_ai_agents|https://www.reddit.com/r/AI_Agents/top/.rss?t=day|agents

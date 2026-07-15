@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Hermes Tech — dienas digest ģenerators.
-1. Paņem pēdējo 36h rakstus no SQLite
-2. DeepSeek V4 Flash izvēlas top 5 un uzraksta digest Hermes Tech balsī
-3. Regex pārbauda aizliegtos vārdus (cietais filtrs, neatkarīgs no modeļa)
-4. Saglabā digests/YYYY-MM-DD.md un nosūta uz Telegram apstiprināšanai
-5. Ping healthchecks.io (ja konfigurēts)
+"""Hermes Tech — digest ģenerators v3.
+Lietošana: digest.py [devops|ai|agents]   (noklusējums: devops)
+Jaunumi: kategoriju atbalsts + faktu pārbaudes atruna promptā.
 """
 import json
 import re
@@ -23,7 +20,27 @@ DIGESTS = BASE / "digests"
 ENV_FILE = BASE / ".env"
 
 DEEPSEEK_URL = "https://api.deepseek.com/chat/completions"
-MODEL = "deepseek-v4-flash"  # NB: deepseek-chat alias mirst 2026-07-24
+MODEL = "deepseek-v4-flash"
+
+CATS = {
+    "devops": {
+        "title": "What mattered in DevOps yesterday",
+        "audience": "platform and DevOps engineers running production systems",
+        "label": "📰 DEVOPS",
+    },
+    "ai": {
+        "title": "What mattered in AI yesterday",
+        "audience": ("engineers following AI models, products and platform "
+                     "changes (new models, pricing, limits, capabilities)"),
+        "label": "🧠 AI",
+    },
+    "agents": {
+        "title": "What mattered in AI agents yesterday",
+        "audience": ("engineers building and running AI agents and automation "
+                     "(agent frameworks, releases, tooling, real-world usage)"),
+        "label": "🤖 AGENTS",
+    },
+}
 
 FORBIDDEN = re.compile(
     r"\b(revolutionary|game[- ]?chang\w*|amazing|incredible|"
@@ -31,9 +48,9 @@ FORBIDDEN = re.compile(
     re.IGNORECASE,
 )
 
-MAX_ARTICLES_IN = 60      # cik rakstus dodam modelim izvēlei
-MAX_OUT_TOKENS = 5000     # 2500 bija par maz — JSON tika nogriezts
-MAX_TG_CHUNK = 3900       # Telegram ziņas limits ir 4096
+MAX_ARTICLES_IN = 60
+MAX_OUT_TOKENS = 5000
+MAX_TG_CHUNK = 3900
 
 
 def log(msg: str) -> None:
@@ -67,13 +84,14 @@ def load_persona() -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def fetch_candidates(conn) -> list[dict]:
+def fetch_candidates(conn, category: str) -> list[dict]:
     rows = conn.execute(
         """SELECT id, source, title, link, summary FROM articles
            WHERE digest_date IS NULL
+             AND category = ?
              AND fetched_at >= datetime('now', '-36 hours')
            ORDER BY id DESC LIMIT ?""",
-        (MAX_ARTICLES_IN,),
+        (category, MAX_ARTICLES_IN),
     ).fetchall()
     return [
         {"id": r[0], "source": r[1], "title": r[2], "link": r[3],
@@ -115,18 +133,25 @@ def call_deepseek(api_key: str, system: str, user: str) -> str:
     return choice["message"]["content"]
 
 
-def build_user_prompt(today: str, articles: list[dict], retry_note: str = "") -> str:
+def build_user_prompt(cat: str, today: str, articles: list[dict],
+                      retry_note: str = "") -> str:
+    meta = CATS[cat]
     return (
         f"Today is {today}. Below are candidate articles collected in the last "
-        f"36 hours, as a JSON list.\n\n{json.dumps(articles, ensure_ascii=False)}\n\n"
-        "Task: select the 5 most important items for platform/DevOps engineers. "
-        "Scoring factors: official source, covered by multiple sources, security "
-        "importance, community interest, industry impact. Then write the daily "
-        "digest in the Hermes Tech voice defined in the system prompt, in English, "
-        "following the daily digest format from STYLE.md "
-        f"(title: 'What mattered in DevOps yesterday — {today}'). "
-        "Per topic: 2-3 sentences (what + why it matters), the source link, and a "
-        "one-line Hermes take. Plain markdown, no HTML."
+        f"36 hours for the '{cat}' section, as a JSON list.\n\n"
+        f"{json.dumps(articles, ensure_ascii=False)}\n\n"
+        f"Task: select the 5 most important items for {meta['audience']}. "
+        "Scoring factors: official source, covered by multiple sources, "
+        "security importance, community interest, industry impact. "
+        "Fact-checking rule: if an important claim appears in only one source "
+        "and is not from an official/first-party source, state explicitly in "
+        "that item that the information is not yet fully confirmed. "
+        "Then write the daily digest in the Hermes Tech voice defined in the "
+        "system prompt, in English, following the daily digest format from "
+        f"STYLE.md, with the title '{meta['title']} — {today}'. "
+        "Per topic: 2-3 sentences (what + why it matters), the source link "
+        "as one plain markdown link, and a one-line Hermes take. "
+        "Plain markdown, no HTML."
         + retry_note +
         "\n\nReturn strictly a JSON object: "
         '{"selected_ids": [list of chosen article id numbers], '
@@ -167,25 +192,30 @@ def ping_healthcheck(env: dict) -> None:
 
 
 def main() -> int:
+    cat = sys.argv[1] if len(sys.argv) > 1 else "devops"
+    if cat not in CATS:
+        log(f"KĻŪDA: nezināma kategorija '{cat}' (devops|ai|agents)")
+        return 1
+
     env = load_env()
     api_key = env.get("DEEPSEEK_API_KEY", "")
     if not api_key:
-        log("KĻŪDA: DEEPSEEK_API_KEY nav ~/.hermes-tech/.env — apstājos")
+        log("KĻŪDA: DEEPSEEK_API_KEY nav .env — apstājos")
         return 1
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB)
-    articles = fetch_candidates(conn)
+    articles = fetch_candidates(conn, cat)
     if len(articles) < 3:
-        log(f"Par maz kandidātu ({len(articles)}) — digest netiek ģenerēts")
-        ping_healthcheck(env)  # pipeline dzīvs, vienkārši nav satura
+        log(f"[{cat}] Par maz kandidātu ({len(articles)}) — digest netiek ģenerēts")
+        ping_healthcheck(env)
         return 0
 
     system = load_persona()
-    log(f"Kandidāti: {len(articles)}, prompta persona: {len(system)} rakstz.")
+    log(f"[{cat}] Kandidāti: {len(articles)}, persona: {len(system)} rakstz.")
 
     warning = ""
-    raw = call_deepseek(api_key, system, build_user_prompt(today, articles))
+    raw = call_deepseek(api_key, system, build_user_prompt(cat, today, articles))
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
@@ -195,10 +225,9 @@ def main() -> int:
     digest = result.get("digest", "").strip()
     selected = result.get("selected_ids", [])
 
-    # Cietais aizliegto vārdu filtrs — 1 retry, tad brīdinājums
     hits = FORBIDDEN.findall(digest)
     if hits:
-        log(f"Aizliegtie vārdi: {hits} — retry")
+        log(f"[{cat}] Aizliegtie vārdi: {hits} — retry")
         retry_note = (
             " IMPORTANT: your previous draft used marketing words that are "
             "banned in this voice. Rewrite without any of these words or their "
@@ -206,7 +235,7 @@ def main() -> int:
             "next level, disruptive, cutting edge."
         )
         raw = call_deepseek(api_key, system,
-                            build_user_prompt(today, articles, retry_note))
+                            build_user_prompt(cat, today, articles, retry_note))
         try:
             result = json.loads(raw)
             digest = result.get("digest", "").strip()
@@ -219,10 +248,9 @@ def main() -> int:
                        f"{', '.join(set(h.lower() for h in hits))}\n\n")
 
     if not digest:
-        log("KĻŪDA: tukšs digest no modeļa")
+        log(f"[{cat}] KĻŪDA: tukšs digest no modeļa")
         return 1
 
-    # Atzīmējam izmantotos rakstus + avotu statistiku
     ids = [int(i) for i in selected if str(i).isdigit()]
     if ids:
         q = ",".join("?" * len(ids))
@@ -238,12 +266,12 @@ def main() -> int:
         conn.commit()
 
     DIGESTS.mkdir(parents=True, exist_ok=True)
-    out = DIGESTS / f"{today}.md"
+    out = DIGESTS / f"{today}-{cat}.md"
     out.write_text(digest + "\n")
-    log(f"Digest saglabāts: {out}")
+    log(f"[{cat}] Digest saglabāts: {out}")
 
-    header = (f"{warning}📰 Hermes Tech digest — {today}\n"
-              f"(APSTIPRINĀŠANAI — publicēšana Fāzē 3)\n\n")
+    header = (f"{warning}{CATS[cat]['label']} Hermes Tech — {today}\n"
+              f"(APSTIPRINĀŠANAI: publish.sh {cat} {today})\n\n")
     send_telegram(env, header + digest)
     ping_healthcheck(env)
     conn.close()
