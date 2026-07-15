@@ -37,7 +37,7 @@ sreweekly|https://sreweekly.com/feed/|devops
 
 # ================= AI =================
 openai|https://openai.com/news/rss.xml|ai
-anthropic|https://www.anthropic.com/news/rss.xml|ai
+#anthropic|https://www.anthropic.com/news/rss.xml|ai
 huggingface|https://huggingface.co/blog/feed.xml|ai
 googleai|https://blog.google/technology/ai/rss/|ai
 deepmind|https://deepmind.google/blog/rss.xml|ai
@@ -53,7 +53,7 @@ lastweekinai|https://lastweekin.ai/feed|ai
 hermes_agent_rel|https://github.com/NousResearch/hermes-agent/releases.atom|agents
 claude_code_rel|https://github.com/anthropics/claude-code/releases.atom|agents
 openclaw_rel|https://github.com/openclaw/openclaw/releases.atom|agents
-langchain_blog|https://blog.langchain.dev/rss/|agents
+#langchain_blog|https://blog.langchain.com/rss/|agents
 langchain_rel|https://github.com/langchain-ai/langchain/releases.atom|agents
 crewai_rel|https://github.com/crewAIInc/crewAI/releases.atom|agents
 autogen_rel|https://github.com/microsoft/autogen/releases.atom|agents
