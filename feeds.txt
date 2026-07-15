@@ -20,7 +20,7 @@ devto_devops|https://dev.to/feed/tag/devops
 
 # --- Kubernetes / cloud-native niche (augsta signāla, zema trokšņa) ---
 lwkd|https://lwkd.info/feed.xml
-prometheus|https://prometheus.io/feed.xml
+prometheus|https://prometheus.io/blog/index.xml
 istio|https://istio.io/latest/feed.xml
 r_kubernetes|https://www.reddit.com/r/kubernetes/top/.rss?t=day
 
@@ -40,7 +40,7 @@ aquasec|https://blog.aquasec.com/rss.xml
 netflix_eng|https://netflixtechblog.com/feed
 slack_eng|https://slack.engineering/feed/
 meta_eng|https://engineering.fb.com/feed/
-uber_eng|https://www.uber.com/blog/engineering/rss/
+uber_eng|https://eng.uber.com/feed/
 
 # --- Agregatori / žurnālistika ---
 thenewstack|https://thenewstack.io/feed/
