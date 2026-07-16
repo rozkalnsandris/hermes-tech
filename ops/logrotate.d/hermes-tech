@@ -1,0 +1,11 @@
+/home/andris/hermes-tech/logs/*.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    dateext
+    create 0640 andris andris
+    su andris andris
+}

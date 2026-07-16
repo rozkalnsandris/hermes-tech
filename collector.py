@@ -4,6 +4,7 @@ Jaunumi: kategorijas (devops/ai/agents) + pilnā satura glabāšana.
 Migrācija: automātiski pievieno category/content kolonnas vecai DB.
 """
 import re
+import socket
 import sqlite3
 import sys
 import time
@@ -106,14 +107,22 @@ def entry_published(entry) -> str:
     return ""
 
 
+# HERMES_CRON_SAFETY_V1
+# feedparser HTTP savienojumiem nepieļaujam bezgalīgu socket gaidīšanu.
+socket.setdefaulttimeout(30)
+
+
 def main() -> int:
     DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=30)
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.executescript(SCHEMA)
     migrate(conn)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_new = 0
+    feeds_ok = 0
+    feeds_failed = 0
 
     for name, url, cat in load_feeds():
         conn.execute("INSERT OR IGNORE INTO sources(name) VALUES (?)", (name,))
@@ -143,8 +152,10 @@ def main() -> int:
                 (new, name),
             )
             total_new += new
+            feeds_ok += 1
             log(f"OK   [{cat}] {name}: +{new} jauni ({len(parsed.entries)} feedā)")
         except Exception as exc:  # noqa: BLE001
+            feeds_failed += 1
             conn.execute(
                 "UPDATE sources SET fetch_fail = fetch_fail + 1 WHERE name = ?",
                 (name,),
@@ -153,7 +164,19 @@ def main() -> int:
         conn.commit()
 
     conn.close()
-    log(f"Kopā jauni raksti: {total_new}")
+    log(
+        f"Kopā jauni raksti: {total_new}; "
+        f"avoti OK: {feeds_ok}; avoti FAIL: {feeds_failed}"
+    )
+    if feeds_ok == 0:
+        log("KĻŪDA: neviens RSS avots netika veiksmīgi apstrādāts")
+        return 1
+    if feeds_failed > feeds_ok:
+        log(
+            "KĻŪDA: neizdevās apstrādāt vairāk nekā pusi RSS avotu "
+            f"({feeds_failed} FAIL pret {feeds_ok} OK)"
+        )
+        return 1
     return 0
 
 

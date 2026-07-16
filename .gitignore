@@ -9,3 +9,5 @@ __pycache__/
 backups/
 digest.py.backup-*
 publish.sh.backup-*
+.collector.lock
+.digest-pipeline.lock

@@ -9,7 +9,6 @@ import re
 import sqlite3
 import subprocess
 import sys
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -189,46 +188,41 @@ def chunk_paragraphs(text: str, limit: int) -> list[str]:
     return chunks
 
 
+# HERMES_CRON_SAFETY_V2
 def send_telegram(env: dict, text: str) -> bool:
     token = env.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = env.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
         log("Telegram nav konfigurēts (.env) — digest tikai failā")
         return False
+
     ok = True
     api = f"https://api.telegram.org/bot{token}/sendMessage"
     for chunk in chunk_paragraphs(text, MAX_TG_CHUNK):
-        r = requests.post(
-            api,
-            json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            timeout=30,
-        )
-        if r.status_code == 400:
-            # Bojāts HTML — fallback uz plain tekstu bez tagiem
-            plain = re.sub(r"<[^>]+>", "", chunk)
+        try:
             r = requests.post(
                 api,
-                json={"chat_id": chat_id, "text": plain,
+                json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
                       "disable_web_page_preview": True},
                 timeout=30,
             )
-            log("Telegram: HTML noraidīts, nosūtīts plain fallback")
-        if not r.ok:
-            log(f"Telegram kļūda: {r.status_code} {r.text[:200]}")
+            if r.status_code == 400:
+                # Bojāts HTML — fallback uz plain tekstu bez tagiem.
+                plain = re.sub(r"<[^>]+>", "", chunk)
+                r = requests.post(
+                    api,
+                    json={"chat_id": chat_id, "text": plain,
+                          "disable_web_page_preview": True},
+                    timeout=30,
+                )
+                log("Telegram: HTML noraidīts, nosūtīts plain fallback")
+            if not r.ok:
+                log(f"Telegram kļūda: {r.status_code} {r.text[:200]}")
+                ok = False
+        except requests.RequestException as exc:
+            log(f"Telegram tīkla kļūda: {exc}")
             ok = False
     return ok
-
-
-def ping_healthcheck(env: dict) -> None:
-    url = env.get("HEALTHCHECK_URL", "")
-    if not url:
-        return
-    try:
-        urllib.request.urlopen(url, timeout=10)
-        log("Healthcheck ping OK")
-    except Exception as exc:  # noqa: BLE001
-        log(f"Healthcheck ping neizdevās: {exc}")
 
 
 def main() -> int:
@@ -247,10 +241,9 @@ def main() -> int:
     conn = sqlite3.connect(DB, timeout=30)
     articles = fetch_candidates(conn, cat)
     if len(articles) < 3:
-        log(f"[{cat}] Par maz kandidātu ({len(articles)}) — digest netiek ģenerēts")
-        ping_healthcheck(env)
+        log(f"[{cat}] KĻŪDA: par maz kandidātu ({len(articles)}) — digest netiek ģenerēts")
         conn.close()
-        return 0
+        return 1
 
     system = load_persona()
     log(f"[{cat}] Kandidāti: {len(articles)}, persona: {len(system)} rakstz.")
@@ -367,10 +360,10 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             publish_note = (
                 "\n\n⚠️ <b>Auto-publish neizdevās:</b> "
-                "publish.sh pārsniedza 60 sekunžu limitu.\n"
+                "publish.sh pārsniedza 90 sekunžu limitu.\n"
                 f"Manuāli: <code>~/hermes-tech/publish.sh {cat} {today}</code>"
             )
-            log(f"[{cat}] Auto-publish KĻŪDA: pārsniegts 60 sekunžu limits")
+            log(f"[{cat}] Auto-publish KĻŪDA: pārsniegts 90 sekunžu limits")
         except OSError as exc:
             err = htmllib.escape(str(exc)[:300])
             publish_note = (f"\n\n⚠️ <b>Auto-publish neizdevās:</b> {err}\n"
@@ -383,9 +376,14 @@ def main() -> int:
     tg_warning = htmllib.escape(warning) if warning else ""
     header = (f"{tg_warning}{CATS[cat]['label']} <b>{CATS[cat]['title']}</b>\n"
               f"<i>{today}</i>\n{'─' * 22}\n\n")
-    send_telegram(env, header + tg_body + publish_note)
-    ping_healthcheck(env)
+    telegram_ok = send_telegram(env, header + tg_body + publish_note)
+    if not telegram_ok:
+        log(f"[{cat}] BRĪDINĀJUMS: Telegram paziņojums netika pilnībā nosūtīts")
+
     conn.close()
+    if not published:
+        log(f"[{cat}] KĻŪDA: digests netika publicēts")
+        return 1
     return 0
 
 
