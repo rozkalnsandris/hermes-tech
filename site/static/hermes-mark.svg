@@ -1,12 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Hermes Tech">
-  <path d="M21 13v38M43 13v38M21 32h22"
-        fill="none" stroke="#e9ecf2" stroke-width="5"
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 96 64"
+     role="img"
+     aria-label="Hermes Tech winged H">
+  <defs>
+    <linearGradient id="wingLeft" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4da3ff"/>
+      <stop offset="1" stop-color="#8b8cff"/>
+    </linearGradient>
+    <linearGradient id="wingRight" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c084fc"/>
+      <stop offset="1" stop-color="#7c8cff"/>
+    </linearGradient>
+    <linearGradient id="hStroke" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#dce7ff"/>
+      <stop offset="0.55" stop-color="#9db7ff"/>
+      <stop offset="1" stop-color="#c6a7ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- left wing: three clean messenger feathers -->
+  <path d="M7 17L31 25"
+        fill="none" stroke="url(#wingLeft)" stroke-width="4"
+        stroke-linecap="round"/>
+  <path d="M5 27L31 31"
+        fill="none" stroke="url(#wingLeft)" stroke-width="4"
+        stroke-linecap="round"/>
+  <path d="M9 38L31 37"
+        fill="none" stroke="url(#wingLeft)" stroke-width="4"
+        stroke-linecap="round"/>
+
+  <!-- clear central H -->
+  <path d="M35 14V50M61 14V50M35 32H61"
+        fill="none" stroke="url(#hStroke)" stroke-width="5"
         stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M6 17l15 9M6 32h15M6 47l15-9"
-        fill="none" stroke="#4da3ff" stroke-width="4"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M58 17l-15 9M58 32H43M58 47l-15-9"
-        fill="none" stroke="#c084fc" stroke-width="4"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="32" cy="32" r="3.5" fill="#4ade80"/>
+
+  <!-- right wing -->
+  <path d="M89 17L65 25"
+        fill="none" stroke="url(#wingRight)" stroke-width="4"
+        stroke-linecap="round"/>
+  <path d="M91 27L65 31"
+        fill="none" stroke="url(#wingRight)" stroke-width="4"
+        stroke-linecap="round"/>
+  <path d="M87 38L65 37"
+        fill="none" stroke="url(#wingRight)" stroke-width="4"
+        stroke-linecap="round"/>
 </svg>
