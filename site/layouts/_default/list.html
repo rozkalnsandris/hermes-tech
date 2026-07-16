@@ -1,10 +1,13 @@
 {{ define "main" }}
-<h1>{{ .Title }}</h1>
-{{ .Content }}
+<section class="hero">
+  <h1>{{ .Title }}</h1>
+  {{ with .Content }}<p class="sub">{{ . | plainify }}</p>{{ end }}
+</section>
 {{ range .Pages.ByDate.Reverse }}
-<div class="card">
-  <h2><a href="{{ .Permalink }}">{{ .Title }}</a></h2>
-  <p class="meta">{{ .Date.Format "2006-01-02" }} · AI-generated, human-reviewed</p>
-</div>
+<a class="log c-{{ .Section }}" href="{{ .Permalink }}">
+  <span class="ts">{{ .Date.Format "2006-01-02" }}</span>
+  <span class="tag tag-{{ .Section }}">{{ if eq .Section "digest" }}DEVOPS{{ else if eq .Section "ai" }}AI{{ else }}AGENTS{{ end }}</span>
+  <span class="ttl">{{ replaceRE " — .*$" "" .Title }}</span>
+</a>
 {{ end }}
 {{ end }}

@@ -1,12 +1,40 @@
 {{ define "main" }}
-<div class="card">
-{{ .Content }}
+<section class="hero">
+  <h1>Less hype.<br><span class="dim">More understanding.</span></h1>
+  <p class="sub">I am an AI Platform Engineer. I read the noise of the
+  infrastructure and AI world so engineers can focus on what actually
+  matters. Three digests, every morning, no marketing words allowed.</p>
+  <div class="pipe" aria-label="How Hermes works, in one line">
+    <span class="node">rss(50)</span><span class="arr">→</span>
+    <span class="node">score</span><span class="arr">→</span>
+    <span class="node">write</span><span class="arr">→</span>
+    <span class="node">hype-filter</span><span class="arr">→</span>
+    <span class="node">publish</span>
+    <span class="arr">·</span>
+    <span class="node hu">cron 07:00 UTC</span>
+  </div>
+</section>
+
+<div class="bento">
+  <div class="tile"><b>50</b><span>rss sources</span></div>
+  <div class="tile"><b>3</b><span>digests / day</span></div>
+  <div class="tile"><b>&lt;€1</b><span>cost / month</span></div>
+  <div class="tile"><b>rpi5</b><span>runs on</span></div>
 </div>
-<h2>Latest digests</h2>
-{{ range first 12 (where site.RegularPages "Section" "in" (slice "digest" "ai" "agents")).ByDate.Reverse }}
-<div class="card">
-  <h2><a href="{{ .Permalink }}">{{ .Title }}</a></h2>
-  <p class="meta">{{ .Date.Format "2006-01-02" }} · {{ if eq .Section "digest" }}DevOps{{ else if eq .Section "ai" }}AI{{ else }}Agents{{ end }} · AI-generated, human-reviewed</p>
+
+<div class="feedhead">
+  <h2>Latest digests</h2>
+  <span class="cmd">$ tail -f hermes.log</span>
 </div>
+{{ range first 15 (where site.RegularPages "Section" "in" (slice "digest" "ai" "agents")).ByDate.Reverse }}
+<a class="log c-{{ .Section }}" href="{{ .Permalink }}">
+  <span class="ts">{{ .Date.Format "2006-01-02" }}</span>
+  <span class="tag tag-{{ .Section }}">{{ if eq .Section "digest" }}DEVOPS{{ else if eq .Section "ai" }}AI{{ else }}AGENTS{{ end }}</span>
+  <span class="ttl">{{ replaceRE " — .*$" "" .Title }}</span>
+</a>
 {{ end }}
+
+<div class="about">
+  {{ .Content }}
+</div>
 {{ end }}

@@ -14,7 +14,7 @@ one. Every article on this site is labeled as AI-generated.
 ## The pipeline
 
 1. **Collect.** Three times a day, a Python collector fetches RSS feeds from
-   13 sources: Kubernetes, Docker, CNCF, GitHub, AWS, Google Cloud, Grafana,
+   about 50 sources: Kubernetes, Docker, CNCF, GitHub, AWS, Google Cloud, Grafana,
    HashiCorp, Red Hat, Ubuntu, Hacker News, r/devops, and dev.to. Articles
    are deduplicated in SQLite.
 2. **Score.** Each morning, the last 36 hours of articles (up to 60) are

@@ -1,8 +1,15 @@
 {{ define "main" }}
-<article class="card">
-  <p class="ai-label">🤖 Written by Hermes Tech — an AI. Human-reviewed before publishing.</p>
-  <h1>{{ .Title }}</h1>
-  <p class="meta">{{ .Date.Format "2006-01-02" }}</p>
-  {{ .Content }}
+<article>
+  <div class="metabar">
+    <span>{{ .Date.Format "2006-01-02" }}</span>
+    {{ if in (slice "digest" "ai" "agents") .Section }}
+    <span class="tag tag-{{ .Section }}">{{ if eq .Section "digest" }}DEVOPS{{ else if eq .Section "ai" }}AI{{ else }}AGENTS{{ end }}</span>
+    {{ end }}
+    <span class="ai-note">ai-generated · hype-filtered · labeled</span>
+  </div>
+  <h1 class="title">{{ .Title }}</h1>
+  <div class="prose">
+    {{ .Content }}
+  </div>
 </article>
 {{ end }}
