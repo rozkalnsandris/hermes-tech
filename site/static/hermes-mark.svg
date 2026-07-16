@@ -12,22 +12,19 @@
       <stop offset="1" stop-color="#c084fc"/>
     </linearGradient>
     <linearGradient id="h" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#e9ecf2"/>
-      <stop offset="0.55" stop-color="#a9bcff"/>
+      <stop offset="0" stop-color="#edf2ff"/>
+      <stop offset="0.52" stop-color="#a9bcff"/>
       <stop offset="1" stop-color="#c6a7ff"/>
     </linearGradient>
   </defs>
 
-  <!-- broad, simplified left wing -->
-  <path d="M4 13H38L47 20H18Z" fill="url(#leftWing)"/>
-  <path d="M8 25H38L47 28H14Z" fill="url(#leftWing)"/>
-  <path d="M14 36H38L47 34H20Z" fill="url(#leftWing)"/>
+  <path d="M3 12H37L48 20H18Z" fill="url(#leftWing)"/>
+  <path d="M6 24H38L48 28H13Z" fill="url(#leftWing)"/>
+  <path d="M12 36H38L48 34H20Z" fill="url(#leftWing)"/>
 
-  <!-- clear H -->
-  <path d="M49 8H57V24H63V8H71V48H63V32H57V48H49Z" fill="url(#h)"/>
+  <path d="M49 7H58V23H62V7H71V49H62V33H58V49H49Z" fill="url(#h)"/>
 
-  <!-- broad, simplified right wing -->
-  <path d="M116 13H82L73 20H102Z" fill="url(#rightWing)"/>
-  <path d="M112 25H82L73 28H106Z" fill="url(#rightWing)"/>
-  <path d="M106 36H82L73 34H100Z" fill="url(#rightWing)"/>
+  <path d="M117 12H83L72 20H102Z" fill="url(#rightWing)"/>
+  <path d="M114 24H82L72 28H107Z" fill="url(#rightWing)"/>
+  <path d="M108 36H82L72 34H100Z" fill="url(#rightWing)"/>
 </svg>
