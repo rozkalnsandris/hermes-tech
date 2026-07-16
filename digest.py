@@ -3,6 +3,7 @@
 Lietošana: digest.py [devops|ai|agents]   (noklusējums: devops)
 Jaunumi: kategoriju atbalsts + faktu pārbaudes atruna promptā.
 """
+import html as htmllib
 import json
 import re
 import sqlite3
@@ -162,6 +163,32 @@ def build_user_prompt(cat: str, today: str, articles: list[dict],
     )
 
 
+def md_to_tg_html(text: str) -> str:
+    """Digest markdown → Telegram HTML (b/i/a tagi, escaped)."""
+    t = htmllib.escape(text)
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^\s)]+)\)", r'<a href="\2">\1</a>', t)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t, flags=re.DOTALL)
+    t = re.sub(r"(?m)^#{1,6}\s*(.+)$", r"<b>\1</b>", t)
+    t = re.sub(r"(?m)^Hermes: (.+)$", r"💬 <i>\1</i>", t)
+    return t
+
+
+def chunk_paragraphs(text: str, limit: int) -> list[str]:
+    """Sadala tekstu pa rindkopām, nepārraujot HTML tagus vidū."""
+    chunks, cur = [], ""
+    for para in text.split("\n\n"):
+        candidate = f"{cur}\n\n{para}" if cur else para
+        if len(candidate) <= limit:
+            cur = candidate
+        else:
+            if cur:
+                chunks.append(cur)
+            cur = para[:limit]  # ārkārtas apgriešana ļoti garai rindkopai
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
 def send_telegram(env: dict, text: str) -> bool:
     token = env.get("TELEGRAM_BOT_TOKEN", "")
     chat_id = env.get("TELEGRAM_CHAT_ID", "")
@@ -169,14 +196,24 @@ def send_telegram(env: dict, text: str) -> bool:
         log("Telegram nav konfigurēts (.env) — digest tikai failā")
         return False
     ok = True
-    for i in range(0, len(text), MAX_TG_CHUNK):
-        chunk = text[i:i + MAX_TG_CHUNK]
+    api = f"https://api.telegram.org/bot{token}/sendMessage"
+    for chunk in chunk_paragraphs(text, MAX_TG_CHUNK):
         r = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": chunk,
+            api,
+            json={"chat_id": chat_id, "text": chunk, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
             timeout=30,
         )
+        if r.status_code == 400:
+            # Bojāts HTML — fallback uz plain tekstu bez tagiem
+            plain = re.sub(r"<[^>]+>", "", chunk)
+            r = requests.post(
+                api,
+                json={"chat_id": chat_id, "text": plain,
+                      "disable_web_page_preview": True},
+                timeout=30,
+            )
+            log("Telegram: HTML noraidīts, nosūtīts plain fallback")
         if not r.ok:
             log(f"Telegram kļūda: {r.status_code} {r.text[:200]}")
             ok = False
@@ -277,9 +314,9 @@ def main() -> int:
     publish_note = ""
     if warning:
         # Aizliegtie vārdi palika arī pēc retry — NEpublicējam automātiski
-        publish_note = ("\n🚫 NAV publicēts automātiski — aizliegtie vārdi "
-                         "palika arī pēc pārrakstīšanas. Pārbaudi manuāli:\n"
-                         f"~/hermes-tech/publish.sh {cat} {today}")
+        publish_note = ("\n\n🚫 <b>NAV publicēts automātiski</b> — aizliegtie "
+                         "vārdi palika arī pēc pārrakstīšanas. Pārbaudi manuāli:\n"
+                         f"<code>~/hermes-tech/publish.sh {cat} {today}</code>")
         log(f"[{cat}] Auto-publish IZLAISTS (aizliegtie vārdi palika)")
     else:
         try:
@@ -288,15 +325,22 @@ def main() -> int:
                 check=True, capture_output=True, text=True, timeout=60,
             )
             published = True
-            publish_note = f"\n✅ Publicēts: https://tech.rozkalns.net/{SECTIONS[cat]}/{today}/"
+            url = f"https://tech.rozkalns.net/{SECTIONS[cat]}/{today}/"
+            publish_note = f'\n\n✅ <a href="{url}">Publicēts: /{SECTIONS[cat]}/{today}/</a>'
             log(f"[{cat}] Auto-publish OK")
         except subprocess.CalledProcessError as exc:
-            publish_note = (f"\n⚠️ Auto-publish NEIZDEVĀS: {exc.stderr[:300]}\n"
-                            f"Manuāli: ~/hermes-tech/publish.sh {cat} {today}")
-            log(f"[{cat}] Auto-publish KĻŪDA: {exc.stderr[:300]}")
+            err = htmllib.escape((exc.stderr or "")[:300])
+            publish_note = (f"\n\n⚠️ <b>Auto-publish neizdevās:</b> {err}\n"
+                            f"Manuāli: <code>~/hermes-tech/publish.sh {cat} {today}</code>")
+            log(f"[{cat}] Auto-publish KĻŪDA: {(exc.stderr or '')[:300]}")
 
-    header = f"{warning}{CATS[cat]['label']} Hermes Tech — {today}\n"
-    send_telegram(env, header + digest + publish_note)
+    # Telegram versija: izmetam pirmo virsrakstu (dublē header), konvertējam uz HTML
+    body_md = re.sub(r"^#{1,6}[^\n]*\n+", "", digest.strip())
+    tg_body = md_to_tg_html(body_md)
+    tg_warning = htmllib.escape(warning) if warning else ""
+    header = (f"{tg_warning}{CATS[cat]['label']} <b>{CATS[cat]['title']}</b>\n"
+              f"<i>{today}</i>\n{'─' * 22}\n\n")
+    send_telegram(env, header + tg_body + publish_note)
     ping_healthcheck(env)
     conn.close()
     return 0
