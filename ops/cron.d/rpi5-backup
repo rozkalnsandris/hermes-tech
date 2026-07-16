@@ -1,0 +1,5 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+# RPi5 šifrētais backup katru nakti 02:00.
+0 2 * * * root /usr/local/sbin/rpi5-backup

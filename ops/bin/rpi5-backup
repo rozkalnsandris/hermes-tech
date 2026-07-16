@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# RPi5 šifrētais backup runneris V12. Paredzēts izpildei kā root.
+set -Eeuo pipefail
+IFS=$'\n\t'
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 077
+
+CONFIG=/etc/rpi5-backup.conf
+SECRETS_CONFIG=/etc/rpi-update.conf
+LOG_FILE=/var/log/rpi5-backup.log
+LOCK_FILE=/run/lock/rpi5-backup.lock
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo "KĻŪDA: jāpalaiž kā root" >&2; exit 1; }
+[[ -r "$CONFIG" ]] || { echo "KĻŪDA: nav $CONFIG" >&2; exit 1; }
+# shellcheck disable=SC1091
+source "$CONFIG"
+if [[ -r "$SECRETS_CONFIG" ]]; then
+    # shellcheck disable=SC1091
+    source "$SECRETS_CONFIG"
+fi
+
+mkdir -p "$(dirname "$LOG_FILE")" "$BACKUP_DIR"
+touch "$LOG_FILE"
+chown root:root "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+exec >>"$LOG_FILE" 2>&1
+
+log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+
+send_msg() {
+    local text=${1:-}
+    [[ -n "$text" ]] || return 0
+    [[ -n "${TELEGRAM_TOKEN:-}" && -n "${CHAT_ID:-}" ]] || return 0
+    curl --fail --silent --show-error --max-time 15 --retry 2 --retry-all-errors \
+        -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+        -d "chat_id=${CHAT_ID}" --data-urlencode "text=$text" >/dev/null \
+        || log "BRĪDINĀJUMS: Telegram paziņojumu neizdevās nosūtīt"
+}
+
+WORKDIR=""
+TMP_ARCHIVE=""
+SUCCESS=0
+cleanup() {
+    local rc=$?
+    trap - EXIT INT TERM
+    [[ -z "$WORKDIR" ]] || rm -rf -- "$WORKDIR"
+    [[ -z "$TMP_ARCHIVE" ]] || rm -f -- "$TMP_ARCHIVE"
+    if (( rc != 0 && SUCCESS == 0 )); then
+        log "KĻŪDA: backup beidzās ar kodu $rc"
+        send_msg "❌ RPi5 šifrētais backup neizdevās (kods $rc). Skati $LOG_FILE"
+    fi
+    exit "$rc"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { log "KĻŪDA: iepriekšējais backup vēl darbojas"; exit 75; }
+
+for cmd in age age-keygen rsync tar gzip sha256sum rclone python3 curl; do
+    command -v "$cmd" >/dev/null 2>&1 || { log "KĻŪDA: nav '$cmd'"; exit 1; }
+done
+[[ -r "$AGE_KEY" ]] || { log "KĻŪDA: nav age privātās atslēgas"; exit 1; }
+[[ -r "$AGE_RECIPIENT_FILE" ]] || { log "KĻŪDA: nav age recipient faila"; exit 1; }
+[[ -r "$RCLONE_CONFIG" ]] || { log "KĻŪDA: nav rclone config"; exit 1; }
+
+RECIPIENT=$(tr -d '[:space:]' < "$AGE_RECIPIENT_FILE")
+[[ "$RECIPIENT" == age1* ]] || { log "KĻŪDA: nederīgs age recipient"; exit 1; }
+DATE=$(date +%Y-%m-%d_%H-%M-%S)
+BACKUP_NAME="rpi5_backup_${DATE}.tar.gz.age"
+BACKUP_FILE="$BACKUP_DIR/$BACKUP_NAME"
+REMOTE_FILE="${REMOTE_DIR%/}/$BACKUP_NAME"
+TMP_ARCHIVE="$BACKUP_DIR/.${BACKUP_NAME}.tmp"
+WORKDIR=$(mktemp -d "$BACKUP_DIR/.staging-v12.XXXXXXXX")
+PAYLOAD="$WORKDIR/payload"
+mkdir -p "$PAYLOAD"
+
+avail_mb=$(df -Pm "$BACKUP_DIR" | awk 'NR==2 {print $4}')
+if (( avail_mb < 1024 )); then
+    log "KĻŪDA: backup diskā ir tikai ${avail_mb}MB brīvas vietas"
+    exit 1
+fi
+
+log "====== Šifrētais backup sākts: $BACKUP_NAME ======"
+log "Brīva vieta: ${avail_mb}MB"
+
+copy_path() {
+    local src=$1
+    if [[ -e "$src" ]]; then
+        rsync -aR --numeric-ids -- "$src" "$PAYLOAD/"
+    else
+        log "BRĪDINĀJUMS: nav $src"
+    fi
+}
+
+sqlite_snapshot() {
+    local src=$1 dst=$2
+    [[ -f "$src" ]] || { log "BRĪDINĀJUMS: nav SQLite DB $src"; return 0; }
+    mkdir -p "$(dirname "$dst")"
+    python3 - "$src" "$dst" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+source = sqlite3.connect(f"file:{src}?mode=ro", uri=True, timeout=60)
+target = sqlite3.connect(dst, timeout=60)
+try:
+    source.execute("PRAGMA busy_timeout = 60000")
+    source.backup(target, pages=256, sleep=0.05)
+    result = target.execute("PRAGMA quick_check").fetchone()[0]
+    if result != "ok":
+        raise RuntimeError(f"quick_check: {result}")
+finally:
+    target.close()
+    source.close()
+PY
+    chmod 600 "$dst"
+    log "SQLite snapshot OK: $src"
+}
+
+# Sistēmas un lietotāja konfigurācija. Arhīvs tiek šifrēts pirms upload.
+copy_path /home/andris/docker/docker-compose.yml
+copy_path /home/andris/docker/prometheus.yml
+copy_path /home/andris/.config/rclone/rclone.conf
+copy_path /home/andris/post-reboot.sh
+copy_path /home/andris/update.sh
+copy_path /home/andris/monitor.sh
+copy_path /home/andris/backup.sh
+copy_path /usr/local/sbin/rpi5-backup
+copy_path /etc/rpi5-backup.conf
+copy_path /etc/rpi5-backup/age-recipient.txt
+copy_path /etc/rpi-update.conf
+copy_path /etc/cron.d
+copy_path /etc/logrotate.d
+copy_path /etc/docker/daemon.json
+
+# Hermes Tech: saglabājam Git vēsturi, kodu, saturu un noslēpumus, bet ne venv/logus/live DB.
+if [[ -d /home/andris/hermes-tech ]]; then
+    rsync -aR --numeric-ids \
+        --exclude='venv/' \
+        --exclude='logs/' \
+        --exclude='data/hermes.db' \
+        --exclude='data/hermes.db-*' \
+        --exclude='__pycache__/' \
+        --exclude='*.pyc' \
+        --exclude='.deploy.lock' \
+        --exclude='.publish.lock' \
+        --exclude='.collector.lock' \
+        --exclude='.digest-pipeline.lock' \
+        /home/andris/hermes-tech/ "$PAYLOAD/"
+    sqlite_snapshot \
+        /home/andris/hermes-tech/data/hermes.db \
+        "$PAYLOAD/home/andris/hermes-tech/data/hermes.db"
+else
+    log "KĻŪDA: nav /home/andris/hermes-tech"
+    exit 1
+fi
+
+# Home Assistant: konfigurācija ar konsekventu galvenās SQLite DB snapshotu.
+if [[ -d /opt/homeassistant/config ]]; then
+    rsync -aR --numeric-ids \
+        --exclude='home-assistant_v2.db' \
+        --exclude='home-assistant_v2.db-*' \
+        /opt/homeassistant/config/ "$PAYLOAD/"
+    sqlite_snapshot \
+        /opt/homeassistant/config/home-assistant_v2.db \
+        "$PAYLOAD/opt/homeassistant/config/home-assistant_v2.db"
+fi
+
+mkdir -p "$PAYLOAD/backup-metadata"
+{
+    echo "created_at=$(date --iso-8601=seconds)"
+    echo "hostname=$(hostname -f 2>/dev/null || hostname)"
+    echo "kernel=$(uname -srmo)"
+    echo "backup_version=12"
+    echo "archive_encryption=age-x25519"
+    echo "remote=$REMOTE_DIR"
+} > "$PAYLOAD/backup-metadata/manifest.txt"
+
+docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' \
+    > "$PAYLOAD/backup-metadata/docker-ps.txt" 2>/dev/null || true
+dpkg-query -W -f='${binary:Package}\t${Version}\n' \
+    > "$PAYLOAD/backup-metadata/packages.tsv" 2>/dev/null || true
+if [[ -d /home/andris/hermes-tech/.git ]]; then
+    git -C /home/andris/hermes-tech log -20 --oneline \
+        > "$PAYLOAD/backup-metadata/hermes-git-log.txt"
+fi
+
+# Vispirms izveidojam tar no stabilas staging kopijas, tad šifrējam ar age.
+tar --numeric-owner --acls --xattrs -C "$PAYLOAD" -czf - . \
+    | age -r "$RECIPIENT" -o "$TMP_ARCHIVE"
+chmod 600 "$TMP_ARCHIVE"
+[[ -s "$TMP_ARCHIVE" ]] || { log "KĻŪDA: izveidots tukšs arhīvs"; exit 1; }
+
+# Pilns decrypt + tar integritātes tests, plaintext netiek saglabāts diskā.
+LIST_FILE="$WORKDIR/archive-list.txt"
+age -d -i "$AGE_KEY" "$TMP_ARCHIVE" | tar -tzf - > "$LIST_FILE"
+for required in \
+    './home/andris/hermes-tech/.git/HEAD' \
+    './home/andris/hermes-tech/data/hermes.db' \
+    './home/andris/hermes-tech/.env' \
+    './home/andris/.config/rclone/rclone.conf' \
+    './etc/rpi-update.conf'; do
+    grep -Fxq "$required" "$LIST_FILE" || {
+        log "KĻŪDA: arhīvā trūkst $required"
+        exit 1
+    }
+done
+log "Lokālā arhīva decrypt/integritātes tests: OK"
+
+mv -f -- "$TMP_ARCHIVE" "$BACKUP_FILE"
+TMP_ARCHIVE=""
+chmod 600 "$BACKUP_FILE"
+BACKUP_SIZE=$(du -h "$BACKUP_FILE" | awk '{print $1}')
+BACKUP_SHA=$(sha256sum "$BACKUP_FILE" | awk '{print $1}')
+printf '%s  %s\n' "$BACKUP_SHA" "$BACKUP_NAME" > "$BACKUP_FILE.sha256"
+chmod 600 "$BACKUP_FILE.sha256"
+
+log "Augšupielādēju šifrēto arhīvu uz $REMOTE_FILE"
+rclone copyto "$BACKUP_FILE" "$REMOTE_FILE" \
+    --config "$RCLONE_CONFIG" \
+    --checksum --retries 3 --low-level-retries 10 \
+    --contimeout 30s --timeout 10m \
+    --stats 30s --stats-one-line
+rclone copyto "$BACKUP_FILE.sha256" "$REMOTE_FILE.sha256" \
+    --config "$RCLONE_CONFIG" \
+    --checksum --retries 3 --low-level-retries 10 \
+    --contimeout 30s --timeout 10m
+
+local_size=$(stat -c %s "$BACKUP_FILE")
+remote_size=$(rclone lsl "$REMOTE_FILE" --config "$RCLONE_CONFIG" | awk 'NR==1 {print $1}')
+[[ "$remote_size" == "$local_size" ]] || {
+    log "KĻŪDA: remote izmērs $remote_size neatbilst lokālajam $local_size"
+    exit 1
+}
+log "Remote izmēra pārbaude: OK ($local_size bytes)"
+
+# Retention: tikai V10 šifrētie faili jaunajā direktorijā.
+find "$BACKUP_DIR" -maxdepth 1 -type f \
+    \( -name 'rpi5_backup_*.tar.gz.age' -o -name 'rpi5_backup_*.tar.gz.age.sha256' \) \
+    -mtime +"$LOCAL_KEEP_DAYS" -print -delete
+rclone delete "$REMOTE_DIR" --config "$RCLONE_CONFIG" \
+    --min-age "${REMOTE_KEEP_DAYS}d" \
+    --filter '+ rpi5_backup_*.tar.gz.age' \
+    --filter '+ rpi5_backup_*.tar.gz.age.sha256' \
+    --filter '- *'
+
+SUCCESS=1
+log "Backup veiksmīgs: $BACKUP_FILE ($BACKUP_SIZE)"
+log "SHA-256: $BACKUP_SHA"
+log "====== Backup pabeigts ======"
+send_msg "$(printf '✅ RPi5 šifrētais backup veiksmīgs\n📦 %s\n📏 %s\n🔐 age šifrēts\n☁️ Google Drive' "$BACKUP_NAME" "$BACKUP_SIZE")"

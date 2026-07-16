@@ -1,0 +1,8 @@
+# RPi5 backup konfigurācija. Satur tikai ceļus un retention, nevis noslēpumus.
+BACKUP_DIR="/opt/backups"
+REMOTE_DIR="gdrive:rpi5-backups-encrypted"
+LOCAL_KEEP_DAYS=7
+REMOTE_KEEP_DAYS=30
+RCLONE_CONFIG="/home/andris/.config/rclone/rclone.conf"
+AGE_KEY="/etc/rpi5-backup/age.key"
+AGE_RECIPIENT_FILE="/etc/rpi5-backup/age-recipient.txt"
