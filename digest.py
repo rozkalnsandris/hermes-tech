@@ -244,11 +244,12 @@ def main() -> int:
         return 1
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(DB, timeout=30)
     articles = fetch_candidates(conn, cat)
     if len(articles) < 3:
         log(f"[{cat}] Par maz kandidātu ({len(articles)}) — digest netiek ģenerēts")
         ping_healthcheck(env)
+        conn.close()
         return 0
 
     system = load_persona()
@@ -289,25 +290,52 @@ def main() -> int:
 
     if not digest:
         log(f"[{cat}] KĻŪDA: tukšs digest no modeļa")
+        conn.close()
         return 1
 
-    ids = [int(i) for i in selected if str(i).isdigit()]
-    if ids:
-        q = ",".join("?" * len(ids))
-        conn.execute(
-            f"UPDATE articles SET digest_date = ? WHERE id IN ({q})",
-            [today, *ids],
-        )
-        conn.execute(
-            f"""UPDATE sources SET picked = picked + 1 WHERE name IN
-                (SELECT source FROM articles WHERE id IN ({q}))""",
-            ids,
-        )
-        conn.commit()
+    # HERMES_PUBLISH_SAFETY_V2
+    # Modelis drīkst izvēlēties tikai ID no šīs palaišanas kandidātu saraksta.
+    if not isinstance(selected, list):
+        log(f"[{cat}] KĻŪDA: selected_ids nav saraksts")
+        conn.close()
+        return 1
 
+    candidate_ids = {article["id"] for article in articles}
+    ids = []
+    ignored_ids = []
+    for value in selected:
+        if isinstance(value, bool):
+            ignored_ids.append(value)
+            continue
+        if isinstance(value, int):
+            article_id = value
+        elif isinstance(value, str) and value.isdigit():
+            article_id = int(value)
+        else:
+            ignored_ids.append(value)
+            continue
+
+        if article_id not in candidate_ids:
+            ignored_ids.append(value)
+        elif article_id not in ids:
+            ids.append(article_id)
+
+    if ignored_ids:
+        log(f"[{cat}] Ignorēti nederīgi selected_ids: {ignored_ids}")
+
+    if not ids:
+        log(f"[{cat}] KĻŪDA: modelis neatdeva nevienu derīgu selected_id")
+        conn.close()
+        return 1
+
+    # DB vēl netiek mainīta. ID tiek nodoti publish.sh paslēptā metadatu rindā.
     DIGESTS.mkdir(parents=True, exist_ok=True)
     out = DIGESTS / f"{today}-{cat}.md"
-    out.write_text(digest + "\n")
+    metadata = ",".join(str(article_id) for article_id in ids)
+    out.write_text(
+        f"<!-- selected_ids: {metadata} -->\n{digest}\n",
+        encoding="utf-8",
+    )
     log(f"[{cat}] Digest saglabāts: {out}")
 
     published = False
@@ -320,19 +348,34 @@ def main() -> int:
         log(f"[{cat}] Auto-publish IZLAISTS (aizliegtie vārdi palika)")
     else:
         try:
-            subprocess.run(
+            proc = subprocess.run(
                 [str(BASE / "publish.sh"), cat, today],
-                check=True, capture_output=True, text=True, timeout=60,
+                check=True, capture_output=True, text=True, timeout=90,
             )
+            if proc.stderr.strip():
+                log(f"[{cat}] publish.sh brīdinājums: {proc.stderr[:300]}")
             published = True
             url = f"https://tech.rozkalns.net/{SECTIONS[cat]}/{today}/"
             publish_note = f'\n\n✅ <a href="{url}">Publicēts: /{SECTIONS[cat]}/{today}/</a>'
             log(f"[{cat}] Auto-publish OK")
         except subprocess.CalledProcessError as exc:
-            err = htmllib.escape((exc.stderr or "")[:300])
+            details = exc.stderr or exc.stdout or str(exc)
+            err = htmllib.escape(details[:300])
             publish_note = (f"\n\n⚠️ <b>Auto-publish neizdevās:</b> {err}\n"
                             f"Manuāli: <code>~/hermes-tech/publish.sh {cat} {today}</code>")
-            log(f"[{cat}] Auto-publish KĻŪDA: {(exc.stderr or '')[:300]}")
+            log(f"[{cat}] Auto-publish KĻŪDA: {details[:300]}")
+        except subprocess.TimeoutExpired:
+            publish_note = (
+                "\n\n⚠️ <b>Auto-publish neizdevās:</b> "
+                "publish.sh pārsniedza 60 sekunžu limitu.\n"
+                f"Manuāli: <code>~/hermes-tech/publish.sh {cat} {today}</code>"
+            )
+            log(f"[{cat}] Auto-publish KĻŪDA: pārsniegts 60 sekunžu limits")
+        except OSError as exc:
+            err = htmllib.escape(str(exc)[:300])
+            publish_note = (f"\n\n⚠️ <b>Auto-publish neizdevās:</b> {err}\n"
+                            f"Manuāli: <code>~/hermes-tech/publish.sh {cat} {today}</code>")
+            log(f"[{cat}] Auto-publish KĻŪDA: {exc}")
 
     # Telegram versija: izmetam pirmo virsrakstu (dublē header), konvertējam uz HTML
     body_md = re.sub(r"^#{1,6}[^\n]*\n+", "", digest.strip())
