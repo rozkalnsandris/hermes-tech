@@ -217,6 +217,13 @@ PY
 # Hugo būvē pilnu vietnes kopiju atsevišķā direktorijā.
 cd "$SITE"
 hugo --destination "$BUILD_DIR" --cleanDestinationDir --minify --quiet
+
+# HERMES_PUBLIC_PERMISSIONS_V5
+# Hugo būve notiek ar umask 077, tādēļ pirms rsync normalizējam tikai
+# publiski pasniedzamās būves tiesības. Avota faili paliek privāti.
+find "$BUILD_DIR" -type d -exec chmod 755 {} +
+find "$BUILD_DIR" -type f -exec chmod 644 {} +
+
 [[ -s "$BUILD_DIR/index.html" ]] || {
     echo "KĻŪDA: Hugo pagaidu būvē nav index.html" >&2
     exit 1
@@ -226,6 +233,12 @@ hugo --destination "$BUILD_DIR" --cleanDestinationDir --minify --quiet
 rsync -a "$PUBLIC_DIR/" "$PUBLIC_BACKUP/"
 PUBLIC_BACKED_UP=1
 rsync -a --delete "$BUILD_DIR/" "$PUBLIC_DIR/"
+
+# Galamērķa sakne var saglabāt veco 0700 režīmu, tādēļ normalizējam arī to.
+chmod 755 "$PUBLIC_DIR"
+find "$PUBLIC_DIR" -type d -exec chmod 755 {} +
+find "$PUBLIC_DIR" -type f -exec chmod 644 {} +
+
 LIVE_CHANGED=1
 
 # DB atjauninājums notiek pēc veiksmīgas būves un dzīvo failu izvietošanas.
