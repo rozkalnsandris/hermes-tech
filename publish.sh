@@ -111,16 +111,65 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# HERMES_DESIGN_V4_TOPICS
+FORMATTED_BODY="$WORK/formatted-body.md"
+tail -n +2 "$SRC" \
+    | sed '1{/^#\{1,2\} /d}' \
+    | "$PYTHON" "$BASE/format_digest.py" \
+    > "$FORMATTED_BODY"
+
+[[ -s "$FORMATTED_BODY" ]] || {
+    echo "KĻŪDA: format_digest.py izveidoja tukšu saturu" >&2
+    exit 1
+}
+
+TOPICS_YAML=$(
+    "$PYTHON" - "$FORMATTED_BODY" <<'PYTOPICS'
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+topics = []
+
+for line in path.read_text(encoding="utf-8").splitlines():
+    match = re.match(r"^\s*#{2,4}\s+(.+?)\s*$", line)
+    if not match:
+        continue
+
+    topic = match.group(1)
+    topic = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", topic)
+    topic = re.sub(r"<[^>]+>", "", topic)
+    topic = topic.replace("**", "").replace("__", "").replace("`", "")
+    topic = re.sub(r"\s+#+\s*$", "", topic)
+    topic = re.sub(r"\s+", " ", topic).strip()
+
+    if topic and topic not in topics:
+        topics.append(topic)
+    if len(topics) == 3:
+        break
+
+if len(topics) < 3:
+    raise SystemExit(
+        f"KĻŪDA: formatētajā digestā atrasti tikai {len(topics)} rakstu virsraksti"
+    )
+
+for topic in topics:
+    print("  - " + json.dumps(topic, ensure_ascii=False))
+PYTOPICS
+)
+
 {
     echo "---"
     echo "title: \"$TITLE\""
     echo "date: ${DATE}T07:00:00+02:00"
     echo "images: [\"/og/${DATE}-${CAT}.png\"]"
+    echo "topics:"
+    printf '%s\n' "$TOPICS_YAML"
     echo "---"
     echo
-    tail -n +2 "$SRC" \
-        | sed '1{/^#\{1,2\} /d}' \
-        | "$PYTHON" "$BASE/format_digest.py"
+    cat "$FORMATTED_BODY"
 } > "$TMP_DST"
 [[ -s "$TMP_DST" ]] || { echo "KĻŪDA: izveidots tukšs Hugo satura fails" >&2; exit 1; }
 mv -f -- "$TMP_DST" "$DST"

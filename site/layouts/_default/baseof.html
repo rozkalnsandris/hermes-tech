@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/hermes-mark.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0c0e12">
 <title>{{ if not .IsHome }}{{ .Title }} — {{ end }}{{ site.Title }}</title>
 <meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
 <meta property="og:title" content="{{ .Title }}">
@@ -12,10 +14,12 @@
 {{ with .Params.images }}<meta property="og:image" content="{{ index . 0 | absURL }}">{{ end }}
 {{ range .AlternativeOutputFormats }}<link rel="{{ .Rel }}" type="{{ .MediaType.Type }}" href="{{ .Permalink }}" title="{{ site.Title }}">{{ end }}
 <style>
+/* HERMES_DESIGN_V4 */
 :root{
   --bg0:#0c0e12; --bg1:#12151b; --panel:#171b22; --panel2:#1c212a;
   --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
-  --text:#e9ecf2; --muted:#8a93a6; --faint:#5c6373;
+  --text:#e9ecf2; --muted:#949daf; --faint:#7b8598;
+  --hero-dim:#8992ad;
   --devops:#4da3ff; --ai:#c084fc; --agents:#ffb454; --live:#4ade80;
   --mono:ui-monospace,"JetBrains Mono","SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
   --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
@@ -42,7 +46,9 @@ header.site{
   border-bottom:1px solid var(--line);
 }
 .hbar{display:flex;align-items:center;gap:14px;padding:13px 0;flex-wrap:wrap}
-.brand{font-family:var(--mono);font-size:.95rem;font-weight:600;letter-spacing:.02em}
+.brand{font-family:var(--mono);font-size:.95rem;font-weight:600;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:8px}
+.hmark{width:22px;height:22px;flex:0 0 auto;filter:drop-shadow(0 0 8px rgba(77,163,255,.18))}
 .brand .u{color:var(--faint)}
 .brand .cur{display:inline-block;width:.55em;height:1.05em;background:var(--devops);
   vertical-align:-.18em;margin-left:2px;animation:blink 1.2s steps(1) infinite}
@@ -66,8 +72,19 @@ nav a.n-agents:hover{color:var(--agents)}
   margin:0 0 14px;font-weight:800;letter-spacing:-.035em;line-height:1.02;
   font-size:clamp(2.4rem,7vw,4.4rem);
 }
-.hero h1 .dim{color:var(--faint)}
+.hero h1 .dim{color:var(--hero-dim)}
 .hero p.sub{max-width:56ch;color:var(--muted);font-size:1.05rem;margin:0}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+.cta{display:inline-flex;align-items:center;gap:9px;padding:9px 13px;border-radius:8px;
+  font-family:var(--mono);font-size:.78rem;font-weight:600;letter-spacing:.02em;
+  border:1px solid var(--line2);transition:transform .15s,border-color .15s,background .15s}
+.cta:hover{transform:translateY(-1px)}
+.cta-primary{color:var(--text);border-color:rgba(77,163,255,.5);
+  background:rgba(77,163,255,.11)}
+.cta-primary:hover{border-color:var(--devops);background:rgba(77,163,255,.17)}
+.cta-secondary{color:var(--muted);background:var(--bg1)}
+.cta-secondary:hover{color:var(--text);border-color:var(--line2)}
+@media(max-width:480px){.hero-actions{flex-direction:column}.cta{justify-content:center}}
 
 /* pipeline strip — paraksta elements */
 .pipe{
@@ -92,7 +109,7 @@ nav a.n-agents:hover{color:var(--agents)}
 @media(max-width:640px){.bento{grid-template-columns:repeat(2,1fr)}}
 
 /* ---------- log feed ---------- */
-.feedhead{display:flex;align-items:baseline;gap:12px;margin:46px 0 10px}
+.feedhead{display:flex;align-items:baseline;gap:12px;margin:46px 0 10px;scroll-margin-top:88px}
 .feedhead h2{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
 .feedhead .cmd{font-family:var(--mono);font-size:.72rem;color:var(--faint)}
 .log{
@@ -105,7 +122,10 @@ nav a.n-agents:hover{color:var(--agents)}
 .log .ts{font-family:var(--mono);font-size:.75rem;color:var(--faint);white-space:nowrap}
 .log .tag{font-family:var(--mono);font-size:.66rem;font-weight:700;letter-spacing:.08em;
   padding:2px 7px;border-radius:5px;white-space:nowrap}
+.log .copy{min-width:0;display:flex;flex-direction:column;gap:2px}
 .log .ttl{font-weight:600;letter-spacing:-.01em;line-height:1.45}
+.log .topics{font-family:var(--mono);font-size:.69rem;color:var(--faint);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.45}
 .log.c-digest:hover{border-left-color:var(--devops)}
 .log.c-ai:hover{border-left-color:var(--ai)}
 .log.c-agents:hover{border-left-color:var(--agents)}
@@ -114,7 +134,7 @@ nav a.n-agents:hover{color:var(--agents)}
 .tag-agents{color:var(--agents);background:rgba(255,180,84,.13)}
 @media(max-width:640px){
   .log{grid-template-columns:auto 1fr;row-gap:4px}
-  .log .ttl{grid-column:1/-1}
+  .log .copy{grid-column:1/-1}
 }
 
 /* ---------- about strip ---------- */
@@ -155,13 +175,16 @@ body.sec-agents .prose blockquote{border-left-color:var(--agents)}
 .prose pre{background:var(--panel);border:1px solid var(--line);padding:14px;
   border-radius:10px;overflow-x:auto}
 .prose blockquote{border-left:2px solid var(--line2);margin:1em 0;
-  padding:2px 18px;color:var(--muted)}
+  padding:7px 18px 7px 50px;color:var(--muted);position:relative}
+.prose blockquote::before{content:"";position:absolute;left:15px;top:12px;
+  width:21px;height:21px;background:url("/hermes-mark.svg") center/contain no-repeat;
+  opacity:.92}
 .prose hr{border:0;border-top:1px solid var(--line);margin:30px 0}
 .prose img{max-width:100%;border-radius:10px}
 
 /* ---------- footer ---------- */
 footer.site{margin-top:70px;border-top:1px solid var(--line);
-  padding:24px 0 40px;color:var(--faint);font-size:.82rem}
+  padding:24px 0 40px;color:var(--muted);font-size:.82rem}
 footer.site .fmono{font-family:var(--mono);font-size:.7rem;letter-spacing:.04em;
   margin-top:8px}
 footer.site a{color:var(--muted);border-bottom:1px solid var(--line2)}
@@ -175,14 +198,17 @@ footer.site a{color:var(--muted);border-bottom:1px solid var(--line2)}
 <body class="sec-{{ if .Section }}{{ .Section }}{{ else }}none{{ end }}">
 <header class="site">
   <div class="wrap hbar">
-    <a href="/" class="brand">hermes<span class="u">_</span>tech<span class="cur"></span></a>
+    <a href="/" class="brand" aria-label="Hermes Tech home">
+      <img class="hmark" src="/hermes-mark.svg" width="22" height="22" alt="">
+      <span>hermes<span class="u">_</span>tech<span class="cur"></span></span>
+    </a>
     <span class="live">live</span>
     <nav>
       <a href="/">home</a>
       <a href="/digest/" class="n-devops">devops</a>
       <a href="/ai/" class="n-ai">ai</a>
       <a href="/agents/" class="n-agents">agents</a>
-      <a href="/how-hermes-works/">how_it_works</a>
+      <a href="/how-hermes-works/">how it works</a>
       <a href="/impressum/">impressum</a>
     </nav>
   </div>
