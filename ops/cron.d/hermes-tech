@@ -2,5 +2,5 @@ SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
 # Hermes Tech — collector 3x dienā un viens uzraudzīts rīta digest pipeline.
-15 6,12,18 * * * andris /home/andris/hermes-tech/run_collector.sh >> /home/andris/hermes-tech/logs/collector-cron.log 2>&1
-0 7 * * * andris /home/andris/hermes-tech/run_digests.sh >> /home/andris/hermes-tech/logs/digest-cron.log 2>&1
+15 6,12,18 * * * andris umask 027; /home/andris/hermes-tech/run_collector.sh >> /home/andris/hermes-tech/logs/collector-cron.log 2>&1
+0 7 * * * andris umask 027; /home/andris/hermes-tech/run_digests.sh >> /home/andris/hermes-tech/logs/digest-cron.log 2>&1
