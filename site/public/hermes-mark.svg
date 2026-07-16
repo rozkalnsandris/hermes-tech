@@ -1,47 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 96 64"
+     viewBox="0 0 120 56"
      role="img"
      aria-label="Hermes Tech winged H">
   <defs>
-    <linearGradient id="wingLeft" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="leftWing" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#4da3ff"/>
       <stop offset="1" stop-color="#8b8cff"/>
     </linearGradient>
-    <linearGradient id="wingRight" x1="1" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#c084fc"/>
-      <stop offset="1" stop-color="#7c8cff"/>
+    <linearGradient id="rightWing" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b8cff"/>
+      <stop offset="1" stop-color="#c084fc"/>
     </linearGradient>
-    <linearGradient id="hStroke" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#dce7ff"/>
-      <stop offset="0.55" stop-color="#9db7ff"/>
+    <linearGradient id="h" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e9ecf2"/>
+      <stop offset="0.55" stop-color="#a9bcff"/>
       <stop offset="1" stop-color="#c6a7ff"/>
     </linearGradient>
   </defs>
 
-  <!-- left wing: three clean messenger feathers -->
-  <path d="M7 17L31 25"
-        fill="none" stroke="url(#wingLeft)" stroke-width="4"
-        stroke-linecap="round"/>
-  <path d="M5 27L31 31"
-        fill="none" stroke="url(#wingLeft)" stroke-width="4"
-        stroke-linecap="round"/>
-  <path d="M9 38L31 37"
-        fill="none" stroke="url(#wingLeft)" stroke-width="4"
-        stroke-linecap="round"/>
+  <!-- broad, simplified left wing -->
+  <path d="M4 13H38L47 20H18Z" fill="url(#leftWing)"/>
+  <path d="M8 25H38L47 28H14Z" fill="url(#leftWing)"/>
+  <path d="M14 36H38L47 34H20Z" fill="url(#leftWing)"/>
 
-  <!-- clear central H -->
-  <path d="M35 14V50M61 14V50M35 32H61"
-        fill="none" stroke="url(#hStroke)" stroke-width="5"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- clear H -->
+  <path d="M49 8H57V24H63V8H71V48H63V32H57V48H49Z" fill="url(#h)"/>
 
-  <!-- right wing -->
-  <path d="M89 17L65 25"
-        fill="none" stroke="url(#wingRight)" stroke-width="4"
-        stroke-linecap="round"/>
-  <path d="M91 27L65 31"
-        fill="none" stroke="url(#wingRight)" stroke-width="4"
-        stroke-linecap="round"/>
-  <path d="M87 38L65 37"
-        fill="none" stroke="url(#wingRight)" stroke-width="4"
-        stroke-linecap="round"/>
+  <!-- broad, simplified right wing -->
+  <path d="M116 13H82L73 20H102Z" fill="url(#rightWing)"/>
+  <path d="M112 25H82L73 28H106Z" fill="url(#rightWing)"/>
+  <path d="M106 36H82L73 34H100Z" fill="url(#rightWing)"/>
 </svg>
