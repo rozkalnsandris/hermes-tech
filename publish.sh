@@ -30,8 +30,10 @@ mkdir -p "$DST_DIR"
   echo "images: [\"/og/${DATE}-${CAT}.png\"]"
   echo "---"
   echo
-  # Izmetam pirmo H1 vai H2 rindu, ja tā dublē virsrakstu
-  sed '1{/^#\{1,2\} /d}' "$SRC"
+  # Izmetam pirmo H1/H2 (dublē virsrakstu), tad pārstrukturējam vienumus
+  # atsevišķos blokos (h3/body/link/citāts), jo modeļa vienkāršie \n
+  # Markdown/Goldmark renderī saplūst vienā rindkopā.
+  sed '1{/^#\{1,2\} /d}' "$SRC" | "$BASE/venv/bin/python" "$BASE/format_digest.py"
 } > "$DST"
 
 "$BASE/venv/bin/python" "$BASE/ogcard.py" "$DATE-$CAT" "$TITLE"
