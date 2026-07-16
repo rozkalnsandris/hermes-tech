@@ -1,12 +1,12 @@
 {{ define "main" }}
 <article>
+  {{ if in (slice "digest" "ai" "agents") .Section }}
   <div class="metabar">
     <span>{{ .Date.Format "2006-01-02" }}</span>
-    {{ if in (slice "digest" "ai" "agents") .Section }}
     <span class="tag tag-{{ .Section }}">{{ if eq .Section "digest" }}DEVOPS{{ else if eq .Section "ai" }}AI{{ else }}AGENTS{{ end }}</span>
-    {{ end }}
     <span class="ai-note">ai-generated · hype-filtered · labeled</span>
   </div>
+  {{ end }}
   <h1 class="title">{{ .Title }}</h1>
   <div class="prose">
     {{ .Content }}
