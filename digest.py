@@ -372,13 +372,13 @@ MANDATORY HERMES ANALYSIS DEPTH FOR EVERY SELECTED ARTICLE:
 
             # Prompta mērķis ir 70–110 un 4–6; validators atstāj toleranci
             # praktiskai modeļu uzvedībai.
-            if not 50 <= words <= 180:
+            if not 55 <= words <= 140:
                 issues.append(
-                    f"Hermes analīze #{index}: {words} vārdi; atļauts 50–180"
+                    f"Hermes analīze #{index}: {words} vārdi; atļauts 55–140"
                 )
-            if not 3 <= sentences <= 8:
+            if not 3 <= sentences <= 7:
                 issues.append(
-                    f"Hermes analīze #{index}: {sentences} teikumi; atļauts 3–8"
+                    f"Hermes analīze #{index}: {sentences} teikumi; atļauts 3–7"
                 )
 
         return issues
