@@ -24,7 +24,7 @@ Per topic, in this exact structure:
 **Headline in a few words**
 Two to three sentences: what happened and why it matters.
 [Source name](https://exact-url-from-the-provided-data)
-Hermes: one-line take, no more than one sentence.
+Hermes: substantive analysis, 70–110 words in 4–6 sentences.
 
 5 topics max. Corrections section at the top when needed:
 "Correction: in the digest of <date> I wrote X. That was wrong. Y is correct."

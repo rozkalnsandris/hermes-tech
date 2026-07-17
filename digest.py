@@ -153,7 +153,7 @@ def build_user_prompt(cat: str, today: str, articles: list[dict],
         "system prompt, in English, following the daily digest format from "
         f"STYLE.md, with the title '{meta['title']} — {today}'. "
         "Per topic: 2-3 sentences (what + why it matters), the source link "
-        "as one plain markdown link, and a one-line Hermes take. "
+        "as one plain markdown link, and a substantive Hermes analysis (70–110 words, 4–6 sentences). "
         "Plain markdown, no HTML."
         + retry_note +
         "\n\nReturn strictly a JSON object: "
@@ -246,6 +246,142 @@ def main() -> int:
         return 1
 
     system = load_persona()
+    # HERMES_HUMAN_STYLE_V2
+    system += """
+
+MANDATORY HUMAN WRITING STYLE FOR EVERY `💬 Hermes:` ANALYSIS:
+- Write like an experienced DevOps/SRE or platform engineer explaining the
+  practical meaning to another technical professional.
+- Sound natural, confident, thoughtful, and conversational, while remaining
+  technically precise and professional.
+- Start with the strongest concrete judgment, consequence, or recommendation.
+  Do not open by restating the headline or saying that the article discusses it.
+- Vary sentence length and pacing. Mix short, direct sentences with somewhat
+  longer explanations. Avoid repetitive or predictable sentence structures.
+- Prefer plain, specific language. Use technical terms only when they improve
+  accuracy; do not replace clear wording with corporate or academic jargon.
+- Add a real opinion grounded in the supplied facts: what changes, why it
+  matters operationally, who is affected, and what a practical team should do.
+- Preserve uncertainty and source caveats. Never invent facts, dates, numbers,
+  product behavior, or official confirmation that the source does not support.
+- Do not add fake emotion, marketing hype, dramatic claims, filler, or forced
+  casual language. The goal is a credible practitioner voice, not a persona act.
+- Avoid canned AI-style openings and transitions, including: "This development
+  highlights", "It is important to note", "It is worth noting", "This serves
+  as a reminder", "This underscores the importance", "In today's rapidly
+  evolving landscape", "As technology continues to evolve", and "In conclusion".
+- Keep the existing output schema, Markdown structure, selected_ids, source
+  links, article count, and all other formatting requirements unchanged.
+"""
+
+    def validate_hermes_style(markdown: str) -> list[str]:
+        """Reject canned AI phrasing inside Hermes analysis blocks."""
+        marker_re = re.compile(
+            r"(?m)^[ \t]*(?:>[ \t]*)?(?:💬[ \t]*)?Hermes:[ \t]*"
+        )
+        boundary_re = re.compile(
+            r"\n[ \t]*\n(?=[ \t]*(?:#{1,6}[ \t]+|\*\*[^\n]+\*\*))"
+        )
+        banned = (
+            "this development highlights",
+            "it is important to note",
+            "it is worth noting",
+            "this serves as a reminder",
+            "this underscores the importance",
+            "in today's rapidly evolving landscape",
+            "in today’s rapidly evolving landscape",
+            "as technology continues to evolve",
+            "in conclusion",
+            "the ever-evolving landscape",
+            "game-changing development",
+        )
+        starts = list(marker_re.finditer(markdown))
+        issues: list[str] = []
+
+        for index, match in enumerate(starts, start=1):
+            tail = markdown[match.end():]
+            boundary = boundary_re.search(tail)
+            block = tail[:boundary.start()] if boundary else tail
+            block = re.sub(r"(?m)^[ \t]*>[ \t]?", "", block).strip()
+            normalized = re.sub(r"\s+", " ", block).lower()
+
+            found = [phrase for phrase in banned if phrase in normalized]
+            if found:
+                issues.append(
+                    f"Hermes analīze #{index}: šabloniska AI frāze '{found[0]}'"
+                )
+
+            if re.search(r"(?m)^[ \t]*[-*][ \t]+", block):
+                issues.append(
+                    f"Hermes analīze #{index}: jābūt dabiskai rindkopai, ne sarakstam"
+                )
+
+        return issues
+    # HERMES_ANALYSIS_DEPTH_V1
+    # Šie noteikumi ir augstākas prioritātes par veco īsā komentāra prasību.
+    system += """
+
+MANDATORY HERMES ANALYSIS DEPTH FOR EVERY SELECTED ARTICLE:
+- The `💬 Hermes:` section is analysis, not a slogan or closing remark.
+- Write 70–110 words in 4–6 complete sentences, as one compact paragraph.
+- Explain why the development matters operationally, who is affected, and
+  what an engineer or team should consider doing next.
+- Include one concrete risk, limitation, trade-off, or source caveat when
+  it is relevant to the supplied material.
+- Do not repeat the title or merely paraphrase the article summary.
+- Prefer specific DevOps, SRE, platform, security, cost, reliability, or
+  maintainability consequences over generic enthusiasm.
+- Use only facts supported by the supplied article data. Do not invent
+  product behavior, dates, numbers, or official confirmation.
+- Preserve the existing JSON schema, selected_ids, Markdown structure,
+  article count, source links, and all other output requirements exactly.
+- Any earlier request for one sentence, a short comment, a brief remark,
+  or a punchline is superseded by these rules.
+"""
+
+    def validate_hermes_analyses(markdown: str, expected: int | None) -> list[str]:
+        """Reject slogan-length Hermes blocks before anything is published."""
+        marker_re = re.compile(
+            r"(?m)^[ \t]*(?:>[ \t]*)?(?:💬[ \t]*)?Hermes:[ \t]*"
+        )
+        starts = list(marker_re.finditer(markdown))
+        issues: list[str] = []
+
+        if expected and len(starts) != expected:
+            issues.append(
+                f"Hermes analīžu skaits {len(starts)}, bet selected_ids skaits {expected}"
+            )
+
+        if not starts:
+            issues.append("digestā nav neviena Hermes analīzes bloka")
+            return issues
+
+        boundary_re = re.compile(
+            r"\n[ \t]*\n(?=[ \t]*(?:#{1,6}[ \t]+|\*\*[^\n]+\*\*))"
+        )
+        word_re = re.compile(r"[A-Za-z0-9][A-Za-z0-9'’_-]*")
+        sentence_re = re.compile(r"[.!?](?=(?:[\"'”’)\]]*)?(?:\s|$))")
+
+        for index, match in enumerate(starts, start=1):
+            tail = markdown[match.end():]
+            boundary = boundary_re.search(tail)
+            block = tail[:boundary.start()] if boundary else tail
+            block = re.sub(r"(?m)^[ \t]*>[ \t]?", "", block).strip()
+            words = len(word_re.findall(block))
+            sentences = len(sentence_re.findall(block))
+
+            # Prompta mērķis ir 70–110 un 4–6; validators atstāj nelielu
+            # toleranci, bet vienas rindas saukļus vairs neielaiž publicēšanā.
+            if not 60 <= words <= 140:
+                issues.append(
+                    f"Hermes analīze #{index}: {words} vārdi; atļauts 60–140"
+                )
+            if not 4 <= sentences <= 7:
+                issues.append(
+                    f"Hermes analīze #{index}: {sentences} teikumi; atļauts 4–7"
+                )
+
+        return issues
     log(f"[{cat}] Kandidāti: {len(articles)}, persona: {len(system)} rakstz.")
 
     warning = ""
@@ -283,6 +419,25 @@ def main() -> int:
 
     if not digest:
         log(f"[{cat}] KĻŪDA: tukšs digest no modeļa")
+        conn.close()
+        return 1
+
+    style_issues = validate_hermes_style(digest)
+    if style_issues:
+        for issue in style_issues:
+            log(f"[{cat}] KĻŪDA: {issue}")
+        log(f"[{cat}] Publicēšana apturēta: Hermes teksts skan pārāk šabloniski")
+        conn.close()
+        return 1
+
+    analysis_issues = validate_hermes_analyses(
+        digest,
+        len(selected) if isinstance(selected, list) else None,
+    )
+    if analysis_issues:
+        for issue in analysis_issues:
+            log(f"[{cat}] KĻŪDA: {issue}")
+        log(f"[{cat}] Publicēšana apturēta: Hermes analīze nav pietiekami izvērsta")
         conn.close()
         return 1
 
