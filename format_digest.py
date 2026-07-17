@@ -1,69 +1,118 @@
 #!/usr/bin/env python3
-"""Pārstrukturē Hermes Tech digest markdown lasāmākā formā priekš Hugo/Goldmark.
+"""Hermes Tech Markdown readability wrapper."""
 
-Problēma: modelis raksta katru vienumu ar vienkāršiem rindu pārtraukumiem
-(virsraksts / teksts / links / Hermes-komentārs), bet CommonMark/Goldmark
-vienu \n uzskata par atstarpi, nevis jaunu bloku — tāpēc viss saplūst vienā
-rindkopā. Šis skripts katru vienumu sadala īstos blokos:
-  ### Headline
-  body teksts...
-  [Source](url)
-  > Hermes: komentārs
-Lietošana: format_digest.py < input.md > output.md
-"""
+# HERMES_READABILITY_V13
+
+from __future__ import annotations
+
+from pathlib import Path
 import re
+import subprocess
 import sys
 
-LINK_RE = re.compile(r"^\[([^\]]+)\]\((https?://[^\s)]+)\)\s*$")
-HERMES_RE = re.compile(r"^Hermes:\s*(.+)$")
-HEAD_RE = re.compile(r"^\*\*(.+?)\*\*\s*(.*)$")
+
+CORE = Path(__file__).with_name("format_digest_core.py")
+HERMES_MARKER = re.compile(
+    r"(?:💬\s*)?Hermes\s*:\s*",
+    flags=re.IGNORECASE,
+)
 
 
-def process_block(block: str) -> str:
-    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
-    if not lines:
-        return ""
+def separate_hermes(markdown: str) -> str:
+    """Move every Hermes marker into its own Markdown blockquote."""
+    markdown = markdown.replace("\r\n", "\n").replace("\r", "\n")
+    output: list[str] = []
+    in_fence = False
 
-    m = HEAD_RE.match(lines[0])
-    if not m:
-        # Nav standarta vienuma formāts (piem., ievadrindkopa) — atstājam kā ir
-        return block.strip()
+    def blank() -> None:
+        if output and output[-1] != "":
+            output.append("")
 
-    headline, rest_of_first = m.group(1).strip(), m.group(2).strip()
-    body_parts = [rest_of_first] if rest_of_first else []
-    link_line = ""
-    hermes_line = ""
+    for raw_line in markdown.split("\n"):
+        line = raw_line.rstrip()
 
-    for ln in lines[1:]:
-        lm = LINK_RE.match(ln)
-        hm = HERMES_RE.match(ln)
-        if hm:
-            hermes_line = hm.group(1).strip()
-        elif lm:
-            link_line = ln
-        else:
-            body_parts.append(ln)
+        if re.match(r"^\s*(```|~~~)", line):
+            in_fence = not in_fence
+            output.append(line)
+            continue
 
-    out = [f"### {headline}", ""]
-    if body_parts:
-        out.append(" ".join(body_parts))
-        out.append("")
-    if link_line:
-        out.append(link_line)
-        out.append("")
-    if hermes_line:
-        out.append(f"> 💬 **Hermes:** {hermes_line}")
-        out.append("")
-    return "\n".join(out).rstrip()
+        if in_fence:
+            output.append(line)
+            continue
+
+        # Jau pareizi formatētu blockquote atstājam kā blockquote,
+        # tikai normalizējam etiķeti.
+        if re.match(r"^\s*>", line):
+            stripped = re.sub(r"^\s*>\s?", "", line)
+            match = HERMES_MARKER.search(stripped)
+            if match:
+                before = stripped[:match.start()].strip()
+                comment = stripped[match.end():].strip()
+                blank()
+                label = "> **Hermes:**"
+                if before:
+                    label += f" {before}"
+                if comment:
+                    label += f" {comment}"
+                output.append(label)
+                blank()
+            else:
+                output.append(line)
+            continue
+
+        match = HERMES_MARKER.search(line)
+        if match:
+            before = line[:match.start()].rstrip()
+            comment = line[match.end():].strip()
+
+            if before:
+                output.append(before)
+            blank()
+
+            quote = "> **Hermes:**"
+            if comment:
+                quote += f" {comment}"
+            output.append(quote)
+            blank()
+            continue
+
+        output.append(line)
+
+    text = "\n".join(output)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip() + "\n"
 
 
 def main() -> int:
-    raw = sys.stdin.read()
-    blocks = re.split(r"\n\s*\n", raw.strip())
-    processed = [process_block(b) for b in blocks]
-    print("\n\n".join(p for p in processed if p))
+    if not CORE.is_file():
+        print(f"KĻŪDA: nav atrasts formatētāja kodols: {CORE}", file=sys.stderr)
+        return 1
+
+    source = sys.stdin.read()
+
+    # Pirmais solis palīdz vecajam formatētājam ieraudzīt Hermes marķieri
+    # kā atsevišķu Markdown bloku.
+    prepared = separate_hermes(source)
+
+    proc = subprocess.run(
+        [sys.executable, str(CORE)],
+        input=prepared,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        if proc.stdout:
+            sys.stdout.write(proc.stdout)
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+        return proc.returncode
+
+    # Otrais solis ir drošības tīkls, ja kodols marķieri atkal saliek
+    # vienā rindkopā ar avota kopsavilkumu.
+    sys.stdout.write(separate_hermes(proc.stdout))
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
