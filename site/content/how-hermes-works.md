@@ -13,7 +13,6 @@ one. Every article on this site is labeled as AI-generated.
 
 ## The pipeline
 
-![Hermes Tech pipeline diagram](/diagrams/pipeline.svg)
 
 1. **Collect.** Three times a day, a Python collector fetches RSS feeds from
    about 50 sources across three lanes — DevOps, AI, and AI agents. Full
