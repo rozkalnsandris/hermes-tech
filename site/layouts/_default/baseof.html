@@ -3,15 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/hermes-winged-h-v9.svg" type="image/svg+xml">
-<meta name="theme-color" content="#0c0e12">
+<link rel="icon" href="/favicon-v15.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16-v15.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32-v15.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48-v15.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v15.png">
+<link rel="manifest" href="/site-v15.webmanifest">
+<meta name="theme-color" content="#03101f">
+<meta name="msapplication-TileColor" content="#03101f">
+<meta name="msapplication-TileImage" content="/mstile-150x150-v15.png">
+<meta name="msapplication-config" content="/browserconfig-v15.xml">
 <title>{{ if not .IsHome }}{{ .Title }} — {{ end }}{{ site.Title }}</title>
 <meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
 <meta property="og:title" content="{{ .Title }}">
 <meta property="og:site_name" content="{{ site.Title }}">
 <meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}">
 <meta property="og:url" content="{{ .Permalink }}">
-{{ with .Params.images }}<meta property="og:image" content="{{ index . 0 | absURL }}">{{ end }}
+<meta property="og:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
+<meta property="og:locale" content="en_US">
+{{ if .Params.images }}
+<meta property="og:image" content="{{ index .Params.images 0 | absURL }}">
+<meta name="twitter:image" content="{{ index .Params.images 0 | absURL }}">
+{{ else }}
+<meta property="og:image" content="{{ "brand/hermes-tech-og-v15.jpg" | absURL }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="{{ "brand/hermes-tech-og-v15.jpg" | absURL }}">
+{{ end }}
+<meta property="og:image:alt" content="Hermes Tech">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ .Title }}">
+<meta name="twitter:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
+<link rel="canonical" href="{{ .Permalink }}">
 {{ range .AlternativeOutputFormats }}<link rel="{{ .Rel }}" type="{{ .MediaType.Type }}" href="{{ .Permalink }}" title="{{ site.Title }}">{{ end }}
 <style>
 /* HERMES_DESIGN_V4 */
@@ -199,14 +222,72 @@ footer.site a{color:var(--muted);border-bottom:1px solid var(--line2)}
   *,*::before,*::after{animation:none!important;transition:none!important}
   html{scroll-behavior:auto}
 }
+
+/* HERMES_BRAND_IDENTITY_V15 */
+:root{
+  --bg0:#03101f;--bg1:#07182a;--panel:#0a1e33;--panel2:#102941;
+  --line:rgba(72,198,255,.10);--line2:rgba(110,211,255,.18);
+  --text:#f4f7fb;--muted:#9bb0c5;--faint:#71869d;--hero-dim:#7898b8;
+  --devops:#22c7ff;--ai:#91a7ff;--agents:#ffb454;--live:#4ade80;
+}
+body{
+  background:
+    radial-gradient(1100px 520px at 82% -12%,rgba(34,199,255,.11),transparent 62%),
+    radial-gradient(900px 460px at 8% 112%,rgba(37,99,235,.10),transparent 64%),
+    linear-gradient(180deg,#03101f 0%,#020b16 100%);
+}
+header.site{background:rgba(3,16,31,.90);backdrop-filter:blur(12px)}
+.hbar{min-height:68px}
+.brand{display:inline-flex;align-items:center;line-height:0;flex:0 0 auto}
+.brand>span,.brand .u,.brand .cur{display:none!important}
+.hmark{
+  display:block;width:220px;height:auto;max-height:42px;object-fit:contain;
+  object-position:left center;flex:0 0 auto;
+  filter:drop-shadow(0 0 11px rgba(34,199,255,.16));
+}
+.hero,article{position:relative;overflow:hidden;isolation:isolate}
+.hero>*,article>*{position:relative;z-index:1}
+.hero::after,article::after{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+}
+.hero::after{right:-58px;top:50%;width:min(43vw,360px);aspect-ratio:768/568;
+  transform:translateY(-50%);opacity:.050}
+article::after{right:-130px;top:92px;width:380px;aspect-ratio:768/568;opacity:.025}
+.prose blockquote::before{
+  background-image:url("/brand/hermes-tech-mark-v15.png")!important;
+  background-position:center!important;background-size:contain!important;
+  background-repeat:no-repeat!important;opacity:.88!important;
+}
+footer.site .wrap{position:relative;padding-left:78px}
+footer.site .wrap::before{
+  content:"";position:absolute;left:22px;top:3px;width:40px;height:40px;
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+  opacity:.72;filter:drop-shadow(0 0 9px rgba(34,199,255,.13));
+}
+@media(max-width:760px){
+  .hbar{gap:10px;padding:11px 0}
+  .hmark{width:184px;max-height:36px}
+  nav{width:100%;margin-left:0;justify-content:flex-start;overflow-x:auto;
+    flex-wrap:nowrap;padding-bottom:2px;scrollbar-width:thin}
+  nav a{flex:0 0 auto}
+  .hero::after{right:-100px;width:300px;opacity:.035}
+  article::after{right:-170px;width:330px;opacity:.020}
+}
+@media(max-width:520px){
+  .hmark{width:166px;max-height:33px}
+  footer.site .wrap{padding-left:22px;padding-top:56px}
+  footer.site .wrap::before{top:4px}
+}
+
 </style>
 </head>
 <body class="sec-{{ if .Section }}{{ .Section }}{{ else }}none{{ end }}">
 <header class="site">
   <div class="wrap hbar">
     <a href="/" class="brand" aria-label="Hermes Tech home">
-      <img class="hmark" src="/hermes-header-winged-h-v12.svg" width="40" height="20" alt="">
-      <span>hermes<span class="u">_</span>tech<span class="cur"></span></span>
+      <img class="hmark" src="/brand/hermes-tech-wordmark-v15.png"
+           width="1363" height="232" alt="Hermes Tech">
     </a>
     <span class="live">live</span>
     <nav>

@@ -1,91 +1,173 @@
 #!/usr/bin/env python3
-"""Hermes Tech — OG social card ģenerators (1200x630, PIL, bez AI attēliem).
-Lietošana: ogcard.py <izvades-nosaukums> "<virsraksts>"
-Saglabā: ~/hermes-tech/site/static/og/<nosaukums>.png
+"""Generate a branded 1200x630 Hermes Tech social card.
+
+CLI contract intentionally stays compatible with publish.sh:
+    ogcard.py <slug> <title>
 """
-import sys
+from __future__ import annotations
+
 from pathlib import Path
+import re
+import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-W, H = 1200, 630
-OUT_DIR = Path.home() / "hermes-tech" / "site" / "static" / "og"
+BASE = Path(__file__).resolve().parent
+STATIC = BASE / "site" / "static"
+WORDMARK = STATIC / "brand" / "hermes-tech-wordmark-v15.png"
+MARK = STATIC / "brand" / "hermes-tech-mark-v15.png"
+OUT_DIR = STATIC / "og"
 
-FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
-FONT_BOLD = FONT_DIR / "DejaVuSans-Bold.ttf"
-FONT_REG = FONT_DIR / "DejaVuSans.ttf"
+WIDTH, HEIGHT = 1200, 630
+NAVY_TOP = (3, 16, 31)
+NAVY_BOTTOM = (1, 8, 18)
+TEXT = (244, 247, 251)
+MUTED = (151, 176, 199)
+ACCENTS = {
+    "devops": (34, 199, 255),
+    "ai": (145, 167, 255),
+    "agents": (255, 180, 84),
+}
+LABELS = {
+    "devops": "DEVOPS",
+    "ai": "AI",
+    "agents": "AI AGENTS",
+}
 
-TEXT = (243, 244, 246)
-MUTED = (156, 163, 175)
-ACCENT = (96, 165, 250)
+
+def font_path(bold: bool) -> str:
+    candidates = (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold
+        else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    )
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return candidate
+    raise SystemExit("KĻŪDA: nav atrasts DejaVu/Liberation Sans fonts")
 
 
-def vertical_gradient(top, bottom):
-    img = Image.new("RGB", (W, H))
-    for y in range(H):
-        t = y / H
-        img.paste(
-            tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)),
-            (0, y, W, y + 1),
+def load_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(font_path(bold), size=size)
+
+
+def category_from_slug(slug: str) -> str:
+    for category in ("agents", "devops", "ai"):
+        if slug.endswith("-" + category):
+            return category
+    return "devops"
+
+
+def wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont,
+              max_width: int, max_lines: int = 4) -> list[str]:
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = word if not current else current + " " + word
+        if draw.textlength(candidate, font=font) <= max_width:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = word
+        if len(lines) == max_lines - 1:
+            break
+    remaining_index = sum(len(line.split()) for line in lines)
+    remaining = words[remaining_index:]
+    if len(lines) == max_lines - 1 and remaining:
+        final = " ".join(remaining)
+        while final and draw.textlength(final + "…", font=font) > max_width:
+            final = " ".join(final.split()[:-1])
+        current = (final + "…") if final else "…"
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    return lines[:max_lines]
+
+
+def make_gradient() -> Image.Image:
+    strip = Image.new("RGB", (1, HEIGHT), NAVY_TOP)
+    pixels = strip.load()
+    for y in range(HEIGHT):
+        t = y / max(1, HEIGHT - 1)
+        pixels[0, y] = tuple(
+            round(NAVY_TOP[i] * (1 - t) + NAVY_BOTTOM[i] * t)
+            for i in range(3)
         )
-    return img
-
-
-def wrap(draw, text, font, max_width):
-    words, lines, cur = text.split(), [], ""
-    for w in words:
-        test = (cur + " " + w).strip()
-        if draw.textlength(test, font=font) <= max_width:
-            cur = test
-        else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines
+    return strip.resize((WIDTH, HEIGHT))
 
 
 def main() -> int:
-    if len(sys.argv) < 3:
-        print("Lietošana: ogcard.py <nosaukums> \"<virsraksts>\"")
-        return 1
-    name, title = sys.argv[1], sys.argv[2]
+    if len(sys.argv) != 3:
+        raise SystemExit("Lietošana: ogcard.py <slug> <title>")
 
-    img = vertical_gradient((58, 63, 75), (30, 33, 40))
-    d = ImageDraw.Draw(img)
+    slug, title = sys.argv[1], sys.argv[2].strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", slug):
+        raise SystemExit("KĻŪDA: nederīgs OG slug")
+    if not title:
+        raise SystemExit("KĻŪDA: tukšs OG virsraksts")
+    if not WORDMARK.is_file() or not MARK.is_file():
+        raise SystemExit("KĻŪDA: trūkst Hermes Tech v15 zīmola failu")
 
-    brand_f = ImageFont.truetype(str(FONT_BOLD), 44)
-    title_f = ImageFont.truetype(str(FONT_BOLD), 62)
-    small_f = ImageFont.truetype(str(FONT_REG), 28)
+    category = category_from_slug(slug)
+    accent = ACCENTS[category]
 
-    # Brands augšā
-    d.text((70, 60), "HERMES", font=brand_f, fill=TEXT)
-    tw = d.textlength("HERMES ", font=brand_f)
-    d.text((70 + tw, 60), "TECH", font=brand_f, fill=ACCENT)
-    d.text((70, 116), "AI Platform Engineer", font=small_f, fill=MUTED)
+    image = make_gradient()
 
-    # Akcenta līnija
-    d.rectangle([70, 170, 190, 176], fill=ACCENT)
+    # Subtle cyan atmosphere, kept outside the text's contrast area.
+    glow = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow)
+    glow_draw.ellipse((740, -210, 1360, 410), fill=(*accent, 52))
+    glow = glow.filter(ImageFilter.GaussianBlur(85))
+    image = Image.alpha_composite(image.convert("RGBA"), glow)
 
-    # Virsraksts (max 4 rindas)
-    lines = wrap(d, title, title_f, W - 140)[:4]
-    y = 230
+    resampling = getattr(Image, "Resampling", Image)
+
+    mark = Image.open(MARK).convert("RGBA")
+    mark.thumbnail((520, 390), resampling.LANCZOS)
+    alpha = mark.getchannel("A").point(lambda value: int(value * 0.13))
+    mark.putalpha(alpha)
+    image.alpha_composite(mark, (WIDTH - mark.width + 40, 92))
+
+    wordmark = Image.open(WORDMARK).convert("RGBA")
+    wordmark.thumbnail((430, 76), resampling.LANCZOS)
+    image.alpha_composite(wordmark, (72, 58))
+
+    draw = ImageDraw.Draw(image)
+    chip_font = load_font(22, bold=True)
+    title_font = load_font(55, bold=True)
+    footer_font = load_font(22)
+    small_font = load_font(19)
+
+    chip = LABELS[category]
+    chip_w = int(draw.textlength(chip, font=chip_font)) + 34
+    draw.rounded_rectangle((72, 162, 72 + chip_w, 204), radius=12,
+                           fill=(7, 42, 64, 255), outline=accent, width=2)
+    draw.text((89, 169), chip, font=chip_font, fill=(228, 248, 255, 255))
+
+    lines = wrap_text(draw, title, title_font, max_width=790, max_lines=4)
+    y = 235
     for line in lines:
-        d.text((70, y), line, font=title_f, fill=TEXT)
-        y += 78
+        draw.text((72, y), line, font=title_font, fill=TEXT, stroke_width=0)
+        y += 68
 
-    # Kājene
-    d.text((70, H - 80),
-           "The technology is not the story. The engineering behind it is.",
-           font=small_f, fill=MUTED)
+    draw.line((72, 535, 1128, 535), fill=(37, 92, 124, 255), width=1)
+    draw.text((72, 558), "AI-generated · hype-filtered · human-supervised",
+              font=small_font, fill=MUTED)
+    domain = "tech.rozkalns.net"
+    domain_w = draw.textlength(domain, font=footer_font)
+    draw.text((1128 - domain_w, 554), domain, font=footer_font, fill=accent)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out = OUT_DIR / f"{name}.png"
-    img.save(out, "PNG")
-    print(f"OG karte: {out}")
+    output = OUT_DIR / f"{slug}.png"
+    image.convert("RGB").save(output, format="PNG", optimize=True)
+    output.chmod(0o644)
+    print(output)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
