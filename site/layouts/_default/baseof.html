@@ -375,6 +375,12 @@ body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell svg{
   body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell{padding:0 0 12px !important}
 }
 
+
+.ht-pipeline-figure-v19{margin:18px 0 10px;max-width:980px}
+.ht-pipeline-figure-v19 img{display:block;width:100%;height:auto;border:0;background:transparent}
+.ht-legacy-pipeline-v19{display:none!important}
+@media(max-width:720px){.ht-pipeline-figure-v19{margin-top:14px}}
+
 </style>
 </head>
 <body class="sec-{{ if .Section }}{{ .Section }}{{ else }}none{{ end }}">
@@ -476,6 +482,35 @@ body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell svg{
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
+</script>
+
+
+<script>
+(function(){
+  function txt(el){ return ((el.innerText || el.textContent || '').replace(/\s+/g,' ').trim()); }
+  function apply(){
+    if(!/\/how-hermes-works\/?$/.test(location.pathname)) return;
+    var headings = Array.from(document.querySelectorAll('h1,h2,h3'));
+    var heading = headings.find(function(h){ return /the pipeline/i.test(txt(h)); });
+    if(!heading) return;
+    if(document.querySelector('.ht-pipeline-figure-v19')) return;
+
+    var probes = ['DevOps RSS','AI RSS','Agents RSS','SQLite','DeepSeek V4 Flash','Hype filter','/digest/'];
+    var scope = heading.closest('main,article,.wrap,.content,body') || document.body;
+    var candidates = Array.from(scope.querySelectorAll('div,section,figure,article'));
+    var legacy = candidates.find(function(el){
+      return probes.filter(function(p){ return txt(el).includes(p); }).length >= 5;
+    });
+    if(legacy){ legacy.classList.add('ht-legacy-pipeline-v19'); }
+
+    var figure = document.createElement('figure');
+    figure.className = 'ht-pipeline-figure-v19';
+    figure.innerHTML = '<img src="/brand/hermes-tech-pipeline-v19.svg" alt="Hermes Tech pipeline">';
+    heading.insertAdjacentElement('afterend', figure);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
   else apply();
 })();
 </script>
