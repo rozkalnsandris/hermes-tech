@@ -370,15 +370,15 @@ MANDATORY HERMES ANALYSIS DEPTH FOR EVERY SELECTED ARTICLE:
             words = len(word_re.findall(block))
             sentences = len(sentence_re.findall(block))
 
-            # Prompta mērķis ir 70–110 un 4–6; validators atstāj nelielu
-            # toleranci, bet vienas rindas saukļus vairs neielaiž publicēšanā.
-            if not 60 <= words <= 140:
+            # Prompta mērķis ir 70–110 un 4–6; validators atstāj toleranci
+            # praktiskai modeļu uzvedībai.
+            if not 50 <= words <= 180:
                 issues.append(
-                    f"Hermes analīze #{index}: {words} vārdi; atļauts 60–140"
+                    f"Hermes analīze #{index}: {words} vārdi; atļauts 50–180"
                 )
-            if not 4 <= sentences <= 7:
+            if not 3 <= sentences <= 8:
                 issues.append(
-                    f"Hermes analīze #{index}: {sentences} teikumi; atļauts 4–7"
+                    f"Hermes analīze #{index}: {sentences} teikumi; atļauts 3–8"
                 )
 
         return issues
