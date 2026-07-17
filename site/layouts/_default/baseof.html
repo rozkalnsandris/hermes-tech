@@ -280,6 +280,69 @@ footer.site .wrap::before{
   footer.site .wrap::before{top:4px}
 }
 
+
+/* HERMES_HOW_IT_WORKS_BLEND_V17 */
+.ht-pipeline-blend-shell{
+  position:relative;
+  padding:22px;
+  margin-top:10px;
+  border-radius:28px;
+  border:1px solid rgba(72,198,255,.11);
+  background:
+    radial-gradient(720px 260px at 88% 8%, rgba(34,199,255,.10), transparent 62%),
+    radial-gradient(560px 260px at 8% 96%, rgba(37,99,235,.10), transparent 66%),
+    linear-gradient(180deg, rgba(10,30,51,.34) 0%, rgba(3,16,31,.18) 100%);
+  box-shadow:0 20px 56px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.03);
+  backdrop-filter: blur(7px);
+  overflow:hidden;
+  isolation:isolate;
+}
+.ht-pipeline-blend-shell::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));
+  pointer-events:none;
+  z-index:0;
+}
+.ht-pipeline-blend-shell::after{
+  content:"";
+  position:absolute;
+  right:-24px;
+  top:50%;
+  width:min(34vw,300px);
+  aspect-ratio:768/568;
+  transform:translateY(-50%);
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+  opacity:.045;
+  pointer-events:none;
+  z-index:0;
+}
+.ht-pipeline-blend-shell > *{position:relative;z-index:1}
+.ht-pipeline-blend-shell svg,
+.ht-pipeline-blend-shell figure,
+.ht-pipeline-blend-shell .mermaid{
+  background:transparent !important;
+}
+.ht-pipeline-node{
+  background:linear-gradient(180deg, rgba(13,29,51,.72), rgba(10,21,39,.52)) !important;
+  border:1px solid rgba(109,214,255,.20) !important;
+  border-radius:18px !important;
+  box-shadow:0 10px 28px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.03) !important;
+  backdrop-filter: blur(8px);
+}
+.ht-pipeline-node.ht-node-devops{border-color:rgba(72,146,255,.42) !important;}
+.ht-pipeline-node.ht-node-ai{border-color:rgba(209,103,255,.44) !important;}
+.ht-pipeline-node.ht-node-agents{border-color:rgba(255,188,62,.44) !important;}
+.ht-pipeline-node.ht-node-dest{border-color:rgba(100,222,255,.28) !important;}
+.ht-pipeline-node.ht-node-flag{border-style:dashed !important; background:linear-gradient(180deg, rgba(26,22,34,.58), rgba(14,18,29,.42)) !important;}
+.ht-pipeline-fade{opacity:.92}
+@media(max-width:840px){
+  .ht-pipeline-blend-shell{padding:14px;border-radius:22px}
+  .ht-pipeline-blend-shell::after{right:-64px;width:240px;opacity:.032}
+}
+
 </style>
 </head>
 <body class="sec-{{ if .Section }}{{ .Section }}{{ else }}none{{ end }}">
@@ -313,5 +376,77 @@ footer.site .wrap::before{
     &nbsp;·&nbsp; <a href="/index.xml">rss</a> &nbsp;·&nbsp; <a href="/llms.txt">llms.txt</a></p>
   </div>
 </footer>
+
+<!-- HERMES_HOW_IT_WORKS_BLEND_JS_V17 -->
+<script>
+(function(){
+  function textOf(el){ return ((el.innerText || el.textContent || "").replace(/\s+/g, ' ').trim()); }
+  function apply(){
+    if (!/\/how-hermes-works\/?$/.test(location.pathname)) return;
+    const headings = Array.from(document.querySelectorAll('h1,h2,h3'));
+    const heading = headings.find(h => /the pipeline/i.test(textOf(h)));
+    const scope = heading ? (heading.closest('main, article, .wrap, .content, body') || document.body) : document.body;
+
+    const probes = ['DevOps RSS','AI RSS','Agents RSS','SQLite','DeepSeek V4 Flash','Hype filter','/digest/'];
+    let shell = null;
+    const candidates = Array.from(scope.querySelectorAll('div,section,figure,article'));
+    shell = candidates.find(el => probes.filter(p => textOf(el).includes(p)).length >= 5);
+    if (!shell && heading) {
+      let node = heading.parentElement;
+      while (node && node !== document.body) {
+        if (probes.filter(p => textOf(node).includes(p)).length >= 4) { shell = node; break; }
+        node = node.nextElementSibling || node.parentElement;
+      }
+    }
+    if (!shell) return;
+    shell.classList.add('ht-pipeline-blend-shell');
+
+    const nodeHints = [
+      ['DevOps RSS','ht-node-devops'],
+      ['AI RSS','ht-node-ai'],
+      ['Agents RSS','ht-node-agents'],
+      ['/digest/','ht-node-dest'],
+      ['/ai/','ht-node-dest'],
+      ['/agents/','ht-node-dest'],
+      ['still flagged after retry','ht-node-flag'],
+      ['SQLite',''],
+      ['DeepSeek V4 Flash',''],
+      ['Hype filter','']
+    ];
+
+    const pool = Array.from(shell.querySelectorAll('div,section,article,a,figure'));
+    for (const el of pool) {
+      const t = textOf(el);
+      let matched = false;
+      for (const [needle, extra] of nodeHints) {
+        if (t.includes(needle)) {
+          el.classList.add('ht-pipeline-node');
+          if (extra) el.classList.add(extra);
+          matched = true;
+        }
+      }
+      if (matched) el.classList.add('ht-pipeline-fade');
+    }
+
+    const svgs = shell.querySelectorAll('svg');
+    svgs.forEach(svg => {
+      svg.style.background = 'transparent';
+      svg.querySelectorAll('rect,foreignObject > div').forEach(el => {
+        const fill = (el.getAttribute && (el.getAttribute('fill') || '')).toLowerCase();
+        if (fill && fill !== 'none') {
+          try { el.setAttribute('fill', 'rgba(13,29,51,0.68)'); } catch(e) {}
+        }
+        if (el.style) {
+          el.style.borderRadius = '18px';
+          el.style.boxShadow = '0 10px 28px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.03)';
+        }
+      });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
+</script>
+
 </body>
 </html>
