@@ -343,6 +343,38 @@ footer.site .wrap::before{
   .ht-pipeline-blend-shell::after{right:-64px;width:240px;opacity:.032}
 }
 
+
+/* HERMES_HOW_IT_WORKS_BLEND_V18 */
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell{
+  background:transparent !important;
+  border:0 !important;
+  box-shadow:none !important;
+  backdrop-filter:none !important;
+  padding:4px 0 18px !important;
+  border-radius:0 !important;
+  overflow:visible !important;
+}
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell::before,
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell::after{
+  display:none !important;
+}
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell > div,
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell > section,
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell > figure{
+  background:transparent !important;
+  box-shadow:none !important;
+}
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-node{
+  background:linear-gradient(180deg,rgba(14,31,54,.78),rgba(7,22,40,.62)) !important;
+  box-shadow:0 12px 30px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell svg{
+  overflow:visible !important;
+}
+@media(max-width:840px){
+  body:has(.ht-pipeline-blend-shell) .ht-pipeline-blend-shell{padding:0 0 12px !important}
+}
+
 </style>
 </head>
 <body class="sec-{{ if .Section }}{{ .Section }}{{ else }}none{{ end }}">
