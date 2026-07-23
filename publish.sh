@@ -179,6 +179,8 @@ TMP_DST=""
 [[ -s "$OG" ]] || { echo "KĻŪDA: OG attēls netika izveidots: $OG" >&2; exit 1; }
 
 # Vispirms tikai validējam DB ierakstus, neko nemainot.
+# HERMES_PRIMARY_CATEGORY_PUBLISH_V1
+# primary_category is the router-owned source of truth for digest category.
 "$PYTHON" - "$DB" "$DATE" "$CAT" "$SELECTED_IDS" validate <<'PY'
 import sqlite3
 import sys
@@ -194,7 +196,7 @@ conn = sqlite3.connect(f"file:{Path(raw_db)}?mode=rw", uri=True, timeout=30)
 try:
     conn.execute("PRAGMA busy_timeout = 30000")
     rows = conn.execute(
-        f"SELECT id, category, digest_date FROM articles WHERE id IN ({placeholders})",
+        f"SELECT id, primary_category, digest_date FROM articles WHERE id IN ({placeholders})",
         ids,
     ).fetchall()
     by_id = {row[0]: row for row in rows}
@@ -256,7 +258,7 @@ try:
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("BEGIN IMMEDIATE")
     rows = conn.execute(
-        f"SELECT id, source, category, digest_date FROM articles "
+        f"SELECT id, source, primary_category, digest_date FROM articles "
         f"WHERE id IN ({placeholders})",
         ids,
     ).fetchall()

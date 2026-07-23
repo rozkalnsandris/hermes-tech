@@ -13,7 +13,7 @@ import sys
 
 CORE = Path(__file__).with_name("format_digest_core.py")
 HERMES_MARKER = re.compile(
-    r"(?:💬\s*)?Hermes\s*:\s*",
+    r"(?:💬\s*)?(?:\*\*)?Hermes\s*:(?:\*\*)?\s*",
     flags=re.IGNORECASE,
 )
 

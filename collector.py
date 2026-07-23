@@ -67,6 +67,33 @@ def migrate(conn) -> None:
     conn.commit()
 
 
+# V4: routing columns — idempotent (pārbauda vai kolonna jau eksistē)
+ROUTING_COLUMNS = {
+    "primary_category": "TEXT",
+    "topic_key": "TEXT",
+    "routed_at": "TEXT",
+}
+
+
+def migrate_routing(conn) -> None:
+    existing = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(articles)").fetchall()
+    }
+    for col, col_type in ROUTING_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE articles ADD COLUMN {col} {col_type}")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_articles_primary_cat "
+        "ON articles(primary_category)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_articles_topic_key "
+        "ON articles(topic_key)"
+    )
+    conn.commit()
+
+
 def load_feeds() -> list[tuple[str, str, str]]:
     feeds = []
     for raw in FEEDS.read_text().splitlines():
@@ -118,6 +145,7 @@ def main() -> int:
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.executescript(SCHEMA)
     migrate(conn)
+    migrate_routing(conn)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_new = 0
