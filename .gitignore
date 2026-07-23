@@ -11,3 +11,9 @@ digest.py.backup-*
 publish.sh.backup-*
 .collector.lock
 .digest-pipeline.lock
+
+# Generated Hugo output
+/site/public/
+
+# Transient routing-repair locks
+/.routing-repair-*.lock

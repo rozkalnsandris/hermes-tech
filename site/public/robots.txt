@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://tech.rozkalns.net/sitemap.xml
