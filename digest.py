@@ -1141,10 +1141,10 @@ def _restore_digest_source_links(path: Path) -> None:
             for index in range(heading_index + 1, hermes_index)
             if lines[index].strip()
         ]
-        if len(content_indexes) < 2:
+        if len(content_indexes) < 1:
             raise RuntimeError(
-                f"article_id {article_id} blokā nav droši identificējamas "
-                "summary + source rindas"
+                f"article_id {article_id} blokā nav droši identificējama "
+                "source rinda"
             )
 
         source_index = content_indexes[-1]
