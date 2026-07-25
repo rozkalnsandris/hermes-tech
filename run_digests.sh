@@ -95,6 +95,8 @@ overall_rc=0
 categories=(devops ai agents)
 successful_categories=()
 failed_generation=()
+published_categories=()
+failed_publish=()
 
 # ============================================================
 # PHASE 1: Global event router (classify)
@@ -194,10 +196,12 @@ for cat in "${successful_categories[@]}"; do
 
     if (( rc == 0 )); then
         published_count=$((published_count + 1))
+        published_categories+=("$cat")
         log "$cat publicēts OK"
     else
         overall_rc=1
         publish_failures=$((publish_failures + 1))
+        failed_publish+=("$cat")
         log "KĻŪDA: $cat publicēšana neizdevās (rc=$rc)"
     fi
 done
@@ -205,20 +209,59 @@ done
 if (( overall_rc == 0 )); then
     ping_healthcheck "$HC_URL"
     HC_FINISHED=1
+else
+    ping_healthcheck "$HC_URL" "/fail"
+    HC_FINISHED=1
+fi
 
-    # BEGIN MANAGED: TELEGRAM_SUCCESS_NOTIFY_V1
-    # Send exactly one Telegram notification only after the whole pipeline
-    # has completed successfully. A Telegram failure is non-fatal because
-    # publication has already succeeded; it is logged explicitly.
-    set +e
-    "$PYTHON" - "$BASE/digest.py" "$BASE/.env" "$TODAY" <<'PY_TELEGRAM_SUCCESS'
+# BEGIN MANAGED: TELEGRAM_PIPELINE_SUMMARY_V2
+# Send one summary after every completed full/partial pipeline run.
+join_csv() {
+    local IFS=,
+    printf '%s' "$*"
+}
+
+published_csv="$(join_csv "${published_categories[@]}")"
+failed_generation_csv="$(join_csv "${failed_generation[@]}")"
+failed_publish_csv="$(join_csv "${failed_publish[@]}")"
+
+set +e
+"$PYTHON" - \
+    "$BASE/digest.py" \
+    "$BASE/.env" \
+    "$BASE/logs/digest-cron.log" \
+    "$TODAY" \
+    "$overall_rc" \
+    "$published_csv" \
+    "$failed_generation_csv" \
+    "$failed_publish_csv" <<'PY_TELEGRAM_SUMMARY'
 from pathlib import Path
 import importlib.util
+import re
 import sys
 
-digest_path = Path(sys.argv[1])
-env_path = Path(sys.argv[2])
-today = sys.argv[3]
+(
+    digest_raw,
+    env_raw,
+    log_raw,
+    today,
+    overall_rc_raw,
+    published_raw,
+    failed_generation_raw,
+    failed_publish_raw,
+) = sys.argv[1:]
+
+digest_path = Path(digest_raw)
+env_path = Path(env_raw)
+log_path = Path(log_raw)
+overall_rc = int(overall_rc_raw)
+
+def parse_csv(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+published = set(parse_csv(published_raw))
+failed_generation = set(parse_csv(failed_generation_raw))
+failed_publish = set(parse_csv(failed_publish_raw))
 
 spec = importlib.util.spec_from_file_location("hermes_digest_notify", digest_path)
 module = importlib.util.module_from_spec(spec)
@@ -237,42 +280,116 @@ for raw in env_path.read_text(encoding="utf-8").splitlines():
     if "=" not in line:
         continue
     key, value = line.split("=", 1)
-    key = key.strip()
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
         value = value[1:-1]
-    env[key] = value
+    env[key.strip()] = value
 
 missing = [k for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID") if not env.get(k)]
 if missing:
     raise SystemExit("Missing Telegram settings in .env: " + ", ".join(missing))
 
-message = (
-    "✅ <b>Hermes Tech daily digest published</b>\n\n"
-    f"DevOps: https://tech.rozkalns.net/digest/{today}/\n"
-    f"AI: https://tech.rozkalns.net/ai/{today}/\n"
-    f"Agents: https://tech.rozkalns.net/agents/{today}/"
-)
+log_text = ""
+if log_path.exists():
+    log_text = log_path.read_text(encoding="utf-8", errors="replace")
 
-ok = module.send_telegram(env, message)
+def generation_error(category: str) -> str:
+    marker = f"Sāku kategoriju: {category}"
+    start = log_text.rfind(marker)
+    if start < 0:
+        return "generation failed"
+    tail = log_text[start:]
+    next_positions = [
+        pos for other in ("devops", "ai", "agents")
+        if other != category
+        for pos in [tail.find(f"Sāku kategoriju: {other}", 1)]
+        if pos >= 0
+    ]
+    if next_positions:
+        tail = tail[:min(next_positions)]
+    stripped_lines = [line.strip() for line in tail.splitlines()]
+    exceptions = [
+        line for line in stripped_lines
+        if line.startswith(("RuntimeError:", "ValueError:", "KeyError:", "JSONDecodeError:"))
+    ]
+    if exceptions:
+        return exceptions[-1]
+    errors = [line for line in stripped_lines if "KĻŪDA:" in line]
+    return errors[-1] if errors else "generation failed"
+
+def publish_error(category: str) -> str:
+    marker = f"Publicēju: {category}"
+    start = log_text.rfind(marker)
+    if start < 0:
+        return "publication failed"
+    tail = log_text[start:]
+    next_positions = [
+        pos for other in ("devops", "ai", "agents")
+        if other != category
+        for pos in [tail.find(f"Publicēju: {other}", 1)]
+        if pos >= 0
+    ]
+    if next_positions:
+        tail = tail[:min(next_positions)]
+    stripped_lines = [line.strip() for line in tail.splitlines()]
+    exceptions = [
+        line for line in stripped_lines
+        if line.startswith(("RuntimeError:", "ValueError:", "KeyError:"))
+    ]
+    if exceptions:
+        return exceptions[-1]
+    errors = [line for line in stripped_lines if "KĻŪDA:" in line]
+    return errors[-1] if errors else "publication failed"
+
+label = {"devops": "DevOps", "ai": "AI", "agents": "Agents"}
+url = {
+    "devops": f"https://tech.rozkalns.net/digest/{today}/",
+    "ai": f"https://tech.rozkalns.net/ai/{today}/",
+    "agents": f"https://tech.rozkalns.net/agents/{today}/",
+}
+
+header = "✅ Hermes Tech daily digest" if overall_rc == 0 else "⚠️ Hermes Tech daily digest"
+lines = [header, today, "", "Published:"]
+errors = []
+
+for category in ("devops", "ai", "agents"):
+    if category in published:
+        lines.append(f"✅ {label[category]} — {url[category]}")
+    elif category in failed_generation:
+        lines.append(f"❌ {label[category]} — generation failed")
+        errors.append(f"{label[category]}: {generation_error(category)}")
+    elif category in failed_publish:
+        lines.append(f"❌ {label[category]} — publication failed")
+        errors.append(f"{label[category]}: {publish_error(category)}")
+    else:
+        lines.append(f"❌ {label[category]} — not published")
+        errors.append(f"{label[category]}: no final publication status")
+
+if errors:
+    lines.extend(["", "Error:", *errors])
+
+lines.extend([
+    "",
+    "Overall: SUCCESS" if overall_rc == 0 else "Overall: PARTIAL FAILURE",
+])
+
+ok = module.send_telegram(env, "\n".join(lines))
 raise SystemExit(0 if ok else 1)
-PY_TELEGRAM_SUCCESS
-    telegram_rc=$?
-    set -e
+PY_TELEGRAM_SUMMARY
+telegram_rc=$?
+set -e
 
-    if (( telegram_rc == 0 )); then
-        log "Telegram success paziņojums nosūtīts"
-    else
-        log "BRĪDINĀJUMS: Telegram success paziņojumu neizdevās nosūtīt (rc=$telegram_rc)"
-    fi
-    # END MANAGED: TELEGRAM_SUCCESS_NOTIFY_V1
+if (( telegram_rc == 0 )); then
+    log "Telegram pipeline kopsavilkums nosūtīts"
+else
+    log "BRĪDINĀJUMS: Telegram pipeline kopsavilkumu neizdevās nosūtīt (rc=$telegram_rc)"
+fi
+# END MANAGED: TELEGRAM_PIPELINE_SUMMARY_V2
 
+if (( overall_rc == 0 )); then
     log "Visas ${published_count} kategorijas publicētas veiksmīgi"
 else
-    ping_healthcheck "$HC_URL" "/fail"
-    HC_FINISHED=1
     log "Pipeline pabeigts daļēji: publicētas ${published_count}"
     log "Ģenerēšanas kļūdas ${#failed_generation[@]}, publicēšanas kļūdas ${publish_failures}"
 fi
-
 exit "$overall_rc"

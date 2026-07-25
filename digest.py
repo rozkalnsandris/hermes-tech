@@ -1060,7 +1060,7 @@ MAX_QUALITY_RETRIES = 2
 
 # HERMES_DIGEST_SOURCE_RESTORE_V1
 def _restore_digest_source_links(path: Path) -> None:
-    """Restore source links without depending on Markdown heading levels."""
+    # Restore canonical DB source links while accepting safe compact source forms.
     import os as _os
     import re as _re
 
@@ -1077,13 +1077,14 @@ def _restore_digest_source_links(path: Path) -> None:
         for value in selected.group(1).split(",")
         if value.strip()
     ]
+    if not selected_ids:
+        raise RuntimeError(f"selected_ids metadata ir tukša: {path}")
 
+    placeholders = ",".join("?" for _ in selected_ids)
     conn = sqlite3.connect(DB)
     try:
-        placeholders = ",".join("?" for _ in selected_ids)
         rows = conn.execute(
-            f"SELECT id, title, link FROM articles "
-            f"WHERE id IN ({placeholders})",
+            f"SELECT id, title, link FROM articles WHERE id IN ({placeholders})",
             selected_ids,
         ).fetchall()
     finally:
@@ -1101,9 +1102,38 @@ def _restore_digest_source_links(path: Path) -> None:
     )
     heading_re = _re.compile(r"^\s*#{1,6}\s+\S")
     markdown_link_re = _re.compile(
-        r"^(?:Source:\s*)?\[[^\]]+\]\(https?://[^)]+\)\s*$",
+        r"^\s*\[([^\]]+)\]\((https?://.+)\)\s*$",
         _re.IGNORECASE,
     )
+    trailing_source_re = _re.compile(
+        r"^(?P<prefix>.*?)(?:\s+)?Source:\s*"
+        r"\[(?P<label>[^\]]+)\]\((?P<url>https?://.+)\)\s*$",
+        _re.IGNORECASE,
+    )
+
+    def _normalise(value: str) -> str:
+        value = value.casefold()
+        value = _re.sub(r"https?://\S+", " ", value)
+        value = _re.sub(r"[^a-z0-9]+", " ", value)
+        return " ".join(value.split())
+
+    def _credible_source(
+        label: str,
+        observed_url: str,
+        title: str,
+        canonical_url: str,
+    ) -> bool:
+        if observed_url.rstrip("/") == canonical_url.rstrip("/"):
+            return True
+        label_norm = _normalise(label)
+        title_norm = _normalise(title)
+        if not label_norm or not title_norm:
+            return False
+        return (
+            label_norm == title_norm
+            or label_norm in title_norm
+            or title_norm in label_norm
+        )
 
     hermes_indexes = [
         index
@@ -1141,28 +1171,52 @@ def _restore_digest_source_links(path: Path) -> None:
             for index in range(heading_index + 1, hermes_index)
             if lines[index].strip()
         ]
-        if len(content_indexes) < 1:
+        if not content_indexes:
             raise RuntimeError(
-                f"article_id {article_id} blokā nav droši identificējama "
-                "source rinda"
+                f"article_id {article_id} blokā nav droši identificējama source rinda"
             )
 
         source_index = content_indexes[-1]
         source_line = lines[source_index].strip()
 
-        if not markdown_link_re.match(source_line):
-            def _normalise(value: str) -> str:
-                value = _re.sub(
-                    r"^Source:\s*",
-                    "",
-                    value,
-                    flags=_re.IGNORECASE,
-                )
-                value = value.replace("[", "").replace("]", "")
-                value = value.replace("*", "").replace("_", "")
-                value = _re.sub(r"\s+", " ", value).strip().casefold()
-                return value
+        link_label = title.strip()
+        leading_tag = _re.match(r"^\[([^\]]+)\]\s*(.*)$", link_label)
+        if leading_tag:
+            tag, rest = leading_tag.groups()
+            link_label = f"{tag}: {rest}" if rest else tag
+        link_label = link_label.replace("[", "").replace("]", "").strip()
+        if not link_label:
+            link_label = f"Article {article_id}"
 
+        canonical_link = f"[{link_label}]({url})"
+        if not markdown_link_re.fullmatch(canonical_link):
+            raise RuntimeError(
+                f"article_id {article_id} canonical source links nav derīgs"
+            )
+
+        standalone = markdown_link_re.fullmatch(source_line)
+        compact = trailing_source_re.fullmatch(source_line)
+
+        if standalone:
+            observed_label, observed_url = standalone.groups()
+            if not _credible_source(observed_label, observed_url, title, url):
+                raise RuntimeError(
+                    f"article_id {article_id} standalone source neatbilst DB; fail-closed"
+                )
+            replacement = canonical_link
+
+        elif compact:
+            observed_label = compact.group("label")
+            observed_url = compact.group("url")
+            if not _credible_source(observed_label, observed_url, title, url):
+                raise RuntimeError(
+                    f"article_id {article_id} inline Source neatbilst DB; fail-closed"
+                )
+            prefix = compact.group("prefix").rstrip()
+            replacement = canonical_link if not prefix else f"{prefix}\n\n{canonical_link}"
+
+        else:
+            # Legacy safe form: a plain source-title line with no URL.
             source_norm = _normalise(source_line)
             title_norm = _normalise(title)
             if not source_norm or not title_norm:
@@ -1176,37 +1230,19 @@ def _restore_digest_source_links(path: Path) -> None:
             ):
                 raise RuntimeError(
                     f"article_id {article_id} pēdējā rinda pirms Hermes "
-                    "neizskatās pēc source; fail-closed"
+                    "neizskatās pēc droša source; fail-closed"
                 )
+            replacement = canonical_link
 
-        link_label = title.strip()
-        leading_tag = _re.match(r"^\[([^\]]+)\]\s*(.*)$", link_label)
-        if leading_tag:
-            tag, rest = leading_tag.groups()
-            link_label = f"{tag}: {rest}" if rest else tag
-
-        # Existing formatter LINK_RE expects no nested square brackets
-        # inside the link label.
-        link_label = link_label.replace("[", "(").replace("]", ")")
-        link_label = _re.sub(r"\s+", " ", link_label).strip()
-        if not link_label:
-            link_label = f"Article {article_id}"
-
-        lines[source_index] = f"[{link_label}]({url})"
-        if not markdown_link_re.match(lines[source_index]):
-            raise RuntimeError(
-                f"article_id {article_id} source links netika atjaunots"
-            )
-
+        lines[source_index] = replacement
         previous_hermes = hermes_index
 
     new_text = "\n".join(lines).rstrip() + "\n"
     tmp = path.with_name(path.name + ".source-restore.tmp")
     try:
-        with tmp.open("w", encoding="utf-8") as handle:
-            handle.write(new_text)
-            handle.flush()
-            _os.fsync(handle.fileno())
+        mode = path.stat().st_mode & 0o777
+        tmp.write_text(new_text, encoding="utf-8")
+        _os.chmod(tmp, mode)
         _os.replace(tmp, path)
     finally:
         if tmp.exists():
