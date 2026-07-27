@@ -307,7 +307,6 @@ GIT_PATHS=(
     "digests/$(basename "$SRC")"
     "site/content/$SECTION/$DATE.md"
     "site/static/og/$DATE-$CAT.png"
-    "site/public"
 )
 if ! git add -A -- "${GIT_PATHS[@]}"; then
     echo "BRĪDINĀJUMS: git add neizdevās; lapa un DB jau ir atjauninātas" >&2

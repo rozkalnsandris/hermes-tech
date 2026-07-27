@@ -1060,7 +1060,15 @@ MAX_QUALITY_RETRIES = 2
 
 # HERMES_DIGEST_SOURCE_RESTORE_V1
 def _restore_digest_source_links(path: Path) -> None:
-    # Restore canonical DB source links while accepting safe compact source forms.
+    # Restore canonical DB source links without trusting model ordering or
+    # whether Source appears before/after the Hermes paragraph.
+    #
+    # Safety model:
+    #   * selected_ids is authoritative for the allowed article set;
+    #   * DB title/link are authoritative for canonical source output;
+    #   * every observed source candidate must map uniquely to one selected DB row;
+    #   * every selected DB row must be represented exactly once;
+    #   * ambiguous/missing/extra candidates fail closed.
     import os as _os
     import re as _re
 
@@ -1079,6 +1087,8 @@ def _restore_digest_source_links(path: Path) -> None:
     ]
     if not selected_ids:
         raise RuntimeError(f"selected_ids metadata ir tukša: {path}")
+    if len(set(selected_ids)) != len(selected_ids):
+        raise RuntimeError(f"selected_ids satur dublikātus: {path}")
 
     placeholders = ",".join("?" for _ in selected_ids)
     conn = sqlite3.connect(DB)
@@ -1090,17 +1100,15 @@ def _restore_digest_source_links(path: Path) -> None:
     finally:
         conn.close()
 
-    by_id = {int(row[0]): (str(row[1]), str(row[2])) for row in rows}
+    by_id = {
+        int(row[0]): (str(row[1]), str(row[2]))
+        for row in rows
+    }
     if set(by_id) != set(selected_ids):
         missing = sorted(set(selected_ids) - set(by_id))
         raise RuntimeError(f"DB trūkst selected article ID: {missing}")
 
     lines = text.splitlines()
-    hermes_re = _re.compile(
-        r"^\s*💬\s*Hermes\s*:",
-        _re.IGNORECASE,
-    )
-    heading_re = _re.compile(r"^\s*#{1,6}\s+\S")
     markdown_link_re = _re.compile(
         r"^\s*\[([^\]]+)\]\((https?://.+)\)\s*$",
         _re.IGNORECASE,
@@ -1114,17 +1122,10 @@ def _restore_digest_source_links(path: Path) -> None:
     def _normalise(value: str) -> str:
         value = value.casefold()
         value = _re.sub(r"https?://\S+", " ", value)
-        value = _re.sub(r"[^a-z0-9]+", " ", value)
+        value = "".join(ch if ch.isalnum() else " " for ch in value)
         return " ".join(value.split())
 
-    def _credible_source(
-        label: str,
-        observed_url: str,
-        title: str,
-        canonical_url: str,
-    ) -> bool:
-        if observed_url.rstrip("/") == canonical_url.rstrip("/"):
-            return True
+    def _label_matches(label: str, title: str) -> bool:
         label_norm = _normalise(label)
         title_norm = _normalise(title)
         if not label_norm or not title_norm:
@@ -1135,107 +1136,111 @@ def _restore_digest_source_links(path: Path) -> None:
             or title_norm in label_norm
         )
 
-    hermes_indexes = [
-        index
-        for index, line in enumerate(lines)
-        if hermes_re.match(line)
-    ]
-    if len(hermes_indexes) != len(selected_ids):
+    def _canonical_label(title: str, article_id: int) -> str:
+        label = title.strip()
+        leading_tag = _re.match(r"^\[([^\]]+)\]\s*(.*)$", label)
+        if leading_tag:
+            tag, rest = leading_tag.groups()
+            label = f"{tag}: {rest}" if rest else tag
+        label = label.replace("[", "").replace("]", "").strip()
+        return label or f"Article {article_id}"
+
+    candidates = []
+    for index, raw_line in enumerate(lines):
+        stripped = raw_line.strip()
+        compact = trailing_source_re.fullmatch(stripped)
+        if compact:
+            candidates.append(
+                {
+                    "index": index,
+                    "label": compact.group("label"),
+                    "url": compact.group("url"),
+                    "prefix": compact.group("prefix").rstrip(),
+                }
+            )
+            continue
+
+        standalone = markdown_link_re.fullmatch(stripped)
+        if standalone:
+            label, url = standalone.groups()
+            candidates.append(
+                {
+                    "index": index,
+                    "label": label,
+                    "url": url,
+                    "prefix": "",
+                }
+            )
+
+    if len(candidates) != len(selected_ids):
         raise RuntimeError(
             "Source restore 1:1 pārbaude neizdevās: "
-            f"Hermes blocks={len(hermes_indexes)} "
-            f"selected_ids={len(selected_ids)}"
+            f"source candidates={len(candidates)} selected_ids={len(selected_ids)}; "
+            "fail-closed"
         )
 
-    previous_hermes = -1
-    for article_id, hermes_index in zip(selected_ids, hermes_indexes):
-        title, url = by_id[article_id]
-        if not url.startswith(("http://", "https://")):
+    unused_ids = set(selected_ids)
+    resolved = []
+
+    for candidate in candidates:
+        observed_url = candidate["url"].rstrip("/")
+
+        exact = [
+            article_id
+            for article_id in unused_ids
+            if by_id[article_id][1].rstrip("/") == observed_url
+        ]
+
+        if len(exact) == 1:
+            article_id = exact[0]
+        elif len(exact) > 1:
+            raise RuntimeError(
+                f"Source URL nav unikāls selected set: {candidate['url']}; fail-closed"
+            )
+        else:
+            credible = [
+                article_id
+                for article_id in unused_ids
+                if _label_matches(candidate["label"], by_id[article_id][0])
+            ]
+            if len(credible) != 1:
+                raise RuntimeError(
+                    "Source kandidātu nevar unikāli sasaistīt ar DB: "
+                    f"label={candidate['label']!r} url={candidate['url']!r} "
+                    f"matches={credible}; fail-closed"
+                )
+            article_id = credible[0]
+
+        title, canonical_url = by_id[article_id]
+        if not canonical_url.startswith(("http://", "https://")):
             raise RuntimeError(
                 f"article_id {article_id} nav derīga HTTP(S) URL"
             )
 
-        heading_candidates = [
-            index
-            for index in range(previous_hermes + 1, hermes_index)
-            if heading_re.match(lines[index])
-        ]
-        if not heading_candidates:
-            raise RuntimeError(
-                f"article_id {article_id} pirms Hermes nav article heading"
-            )
-        heading_index = heading_candidates[-1]
-
-        content_indexes = [
-            index
-            for index in range(heading_index + 1, hermes_index)
-            if lines[index].strip()
-        ]
-        if not content_indexes:
-            raise RuntimeError(
-                f"article_id {article_id} blokā nav droši identificējama source rinda"
-            )
-
-        source_index = content_indexes[-1]
-        source_line = lines[source_index].strip()
-
-        link_label = title.strip()
-        leading_tag = _re.match(r"^\[([^\]]+)\]\s*(.*)$", link_label)
-        if leading_tag:
-            tag, rest = leading_tag.groups()
-            link_label = f"{tag}: {rest}" if rest else tag
-        link_label = link_label.replace("[", "").replace("]", "").strip()
-        if not link_label:
-            link_label = f"Article {article_id}"
-
-        canonical_link = f"[{link_label}]({url})"
+        canonical_link = (
+            f"[{_canonical_label(title, article_id)}]({canonical_url})"
+        )
         if not markdown_link_re.fullmatch(canonical_link):
             raise RuntimeError(
                 f"article_id {article_id} canonical source links nav derīgs"
             )
 
-        standalone = markdown_link_re.fullmatch(source_line)
-        compact = trailing_source_re.fullmatch(source_line)
+        resolved.append((candidate, article_id, canonical_link))
+        unused_ids.remove(article_id)
 
-        if standalone:
-            observed_label, observed_url = standalone.groups()
-            if not _credible_source(observed_label, observed_url, title, url):
-                raise RuntimeError(
-                    f"article_id {article_id} standalone source neatbilst DB; fail-closed"
-                )
-            replacement = canonical_link
+    if unused_ids:
+        raise RuntimeError(
+            f"Source restore nav sasaistīti selected article ID: "
+            f"{sorted(unused_ids)}; fail-closed"
+        )
 
-        elif compact:
-            observed_label = compact.group("label")
-            observed_url = compact.group("url")
-            if not _credible_source(observed_label, observed_url, title, url):
-                raise RuntimeError(
-                    f"article_id {article_id} inline Source neatbilst DB; fail-closed"
-                )
-            prefix = compact.group("prefix").rstrip()
-            replacement = canonical_link if not prefix else f"{prefix}\n\n{canonical_link}"
-
-        else:
-            # Legacy safe form: a plain source-title line with no URL.
-            source_norm = _normalise(source_line)
-            title_norm = _normalise(title)
-            if not source_norm or not title_norm:
-                raise RuntimeError(
-                    f"article_id {article_id} source/title normalizācija tukša"
-                )
-            if not (
-                source_norm == title_norm
-                or source_norm in title_norm
-                or title_norm in source_norm
-            ):
-                raise RuntimeError(
-                    f"article_id {article_id} pēdējā rinda pirms Hermes "
-                    "neizskatās pēc droša source; fail-closed"
-                )
-            replacement = canonical_link
-
-        lines[source_index] = replacement
-        previous_hermes = hermes_index
+    for candidate, _article_id, canonical_link in resolved:
+        prefix = candidate["prefix"]
+        lines[candidate["index"]] = (
+            canonical_link
+            if not prefix
+            else f"{prefix}\n\n{canonical_link}"
+        )
 
     new_text = "\n".join(lines).rstrip() + "\n"
     tmp = path.with_name(path.name + ".source-restore.tmp")
