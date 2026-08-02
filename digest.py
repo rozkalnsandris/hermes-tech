@@ -1056,6 +1056,159 @@ ANALYSIS_HARD_WORD_MAX = 140
 ANALYSIS_HARD_SENTENCE_MIN = 3
 ANALYSIS_HARD_SENTENCE_MAX = 7
 MAX_QUALITY_RETRIES = 2
+DIGEST_ITEM_COUNT = 5
+
+
+# HERMES_DIGEST_SELECTION_RECONCILE_V1
+def _normalise_source_identity(value: str) -> str:
+    value = value.casefold()
+    value = re.sub(r"https?://\S+", " ", value)
+    value = "".join(ch if ch.isalnum() else " " for ch in value)
+    return " ".join(value.split())
+
+
+def _source_label_matches(label: str, title: str) -> bool:
+    label_norm = _normalise_source_identity(label)
+    title_norm = _normalise_source_identity(title)
+    if not label_norm or not title_norm:
+        return False
+    return (
+        label_norm == title_norm
+        or label_norm in title_norm
+        or title_norm in label_norm
+    )
+
+
+def _extract_digest_source_candidates(markdown: str) -> list[dict[str, str]]:
+    markdown_link_re = re.compile(
+        r"^\s*\[([^\]]+)\]\((https?://.+)\)\s*$",
+        re.IGNORECASE,
+    )
+    trailing_source_re = re.compile(
+        r"^(?P<prefix>.*?)(?:\s+)?Source:\s*"
+        r"\[(?P<label>[^\]]+)\]\((?P<url>https?://.+)\)\s*$",
+        re.IGNORECASE,
+    )
+
+    candidates: list[dict[str, str]] = []
+    for raw_line in markdown.splitlines():
+        stripped = raw_line.strip()
+        compact = trailing_source_re.fullmatch(stripped)
+        if compact:
+            candidates.append(
+                {
+                    "label": compact.group("label"),
+                    "url": compact.group("url"),
+                }
+            )
+            continue
+
+        standalone = markdown_link_re.fullmatch(stripped)
+        if standalone:
+            label, url = standalone.groups()
+            candidates.append({"label": label, "url": url})
+
+    return candidates
+
+
+def _resolve_digest_selected_ids(
+    markdown: str,
+    model_selected: Any,
+    articles: list[dict],
+    category: str,
+) -> list[int]:
+    sources = _extract_digest_source_candidates(markdown)
+    if len(sources) != DIGEST_ITEM_COUNT:
+        raise RuntimeError(
+            f"[{category}] Source atlase nav {DIGEST_ITEM_COUNT}: "
+            f"atrasti {len(sources)}; fail-closed"
+        )
+
+    allowed: dict[int, dict] = {}
+    for article in articles:
+        article_id = article.get("id")
+        title = article.get("title")
+        link = article.get("link")
+        if (
+            isinstance(article_id, bool)
+            or not isinstance(article_id, int)
+            or not isinstance(title, str)
+            or not isinstance(link, str)
+            or not link.startswith(("http://", "https://"))
+        ):
+            raise RuntimeError(
+                f"[{category}] Nederīgs kandidāta ieraksts: {article!r}"
+            )
+        if article_id in allowed:
+            raise RuntimeError(
+                f"[{category}] Kandidātu sarakstā atkārtojas ID {article_id}"
+            )
+        allowed[article_id] = article
+
+    unused_ids = set(allowed)
+    resolved: list[int] = []
+    for source in sources:
+        observed_url = source["url"].rstrip("/")
+        exact = [
+            article_id
+            for article_id in unused_ids
+            if str(allowed[article_id]["link"]).rstrip("/") == observed_url
+        ]
+        if len(exact) == 1:
+            article_id = exact[0]
+        elif len(exact) > 1:
+            raise RuntimeError(
+                f"[{category}] Source URL nav unikāls kandidātu kopā: "
+                f"{source['url']}; fail-closed"
+            )
+        else:
+            credible = [
+                article_id
+                for article_id in unused_ids
+                if _source_label_matches(
+                    source["label"], str(allowed[article_id]["title"])
+                )
+            ]
+            if len(credible) != 1:
+                raise RuntimeError(
+                    f"[{category}] Source nevar unikāli sasaistīt ar piegādātajiem "
+                    f"kandidātiem: label={source['label']!r} "
+                    f"url={source['url']!r} matches={credible}; fail-closed"
+                )
+            article_id = credible[0]
+
+        resolved.append(article_id)
+        unused_ids.remove(article_id)
+
+    normalised_model_ids: list[int] = []
+    invalid_model_ids: list[Any] = []
+    if isinstance(model_selected, list):
+        for value in model_selected:
+            if isinstance(value, bool):
+                invalid_model_ids.append(value)
+                continue
+            if isinstance(value, int):
+                article_id = value
+            elif isinstance(value, str) and value.isdigit():
+                article_id = int(value)
+            else:
+                invalid_model_ids.append(value)
+                continue
+            if article_id not in allowed or article_id in normalised_model_ids:
+                invalid_model_ids.append(value)
+            else:
+                normalised_model_ids.append(article_id)
+    else:
+        invalid_model_ids.append(model_selected)
+
+    if normalised_model_ids != resolved or invalid_model_ids:
+        log(
+            f"[{category}] selected_ids droši atjaunoti no digest avotiem: "
+            f"model={model_selected!r} resolved={resolved} "
+            f"invalid={invalid_model_ids!r}"
+        )
+
+    return resolved
 
 
 # HERMES_DIGEST_SOURCE_RESTORE_V1
@@ -1273,7 +1426,7 @@ DIVERSITY REQUIREMENTS FOR THIS CATEGORY:
 - Max 1 article per topic_key (HARD RULE).
 - Avoid selecting multiple stories about the same vendor or subtopic.
 - Penalize repeated sub-topics unless the story is significantly important.
-- The 5 selected items should give a broad view of {cat} news today.
+- The {DIGEST_ITEM_COUNT} selected items should give a broad view of {cat} news today.
 """
     return persona
 
@@ -1287,7 +1440,7 @@ def build_digest_user_prompt(cat: str, today: str,
         f"{FETCH_HOURS} hours for the '{cat}' category, already classified "
         f"and diversity-filtered. Each has a topic_key.\n\n"
         f"{json.dumps(articles, ensure_ascii=False)}\n\n"
-        f"Task: select the 5 most important items for {meta['audience']}. "
+        f"Task: select the {DIGEST_ITEM_COUNT} most important items for {meta['audience']}. "
         "Scoring factors: official source, covered by multiple sources, "
         "security importance, community interest, industry impact. "
         "Fact-checking rule: for unconfirmed claims, state the uncertainty. "
@@ -1543,45 +1696,33 @@ def step_digest(api_key: str, category: str,
         if isinstance(repaired_selected, list):
             selected = repaired_selected
 
-    # Validate selected_ids
-    if not isinstance(selected, list):
-        log(f"[{category}] KĻŪDA: selected_ids nav saraksts")
+    # Reconcile model metadata against the actual source links in the digest.
+    # Exact/unique links to the supplied candidate set are stronger evidence than
+    # an LLM-generated integer list and allow safe repair of a stale/wrong ID.
+    try:
+        ids = _resolve_digest_selected_ids(digest, selected, articles, category)
+    except RuntimeError as exc:
+        log(f"[{category}] KĻŪDA: {exc}")
         return 1
 
-    candidate_ids = {a["id"] for a in articles}
-    ids = []
-    ignored_ids = []
-    for value in selected:
-        if isinstance(value, bool):
-            ignored_ids.append(value)
-            continue
-        if isinstance(value, int):
-            article_id = value
-        elif isinstance(value, str) and value.isdigit():
-            article_id = int(value)
-        else:
-            ignored_ids.append(value)
-            continue
-        if article_id not in candidate_ids:
-            ignored_ids.append(value)
-        elif article_id not in ids:
-            ids.append(article_id)
-
-    if ignored_ids:
-        log(f"[{category}] Ignorēti nederīgi selected_ids: {ignored_ids}")
-    if not ids:
-        log(f"[{category}] KĻŪDA: modelis neatdeva nevienu derīgu selected_id")
-        return 1
-
-    # Save digest to file (always, even in dry-run)
+    # Build and validate a temporary file first. The final digest path is replaced
+    # only after canonical DB source restoration succeeds, so failed generations
+    # never leave a publishable partial file behind.
     DIGESTS.mkdir(parents=True, exist_ok=True)
     out = DIGESTS / f"{today}-{category}.md"
+    tmp = out.with_name(out.name + ".generate.tmp")
     metadata = ",".join(str(aid) for aid in ids)
-    out.write_text(
-        f"<!-- selected_ids: {metadata} -->\n{digest}\n",
-        encoding="utf-8",
-    )
-    _restore_digest_source_links(out)
+    try:
+        tmp.write_text(
+            f"<!-- selected_ids: {metadata} -->\n{digest}\n",
+            encoding="utf-8",
+        )
+        _restore_digest_source_links(tmp)
+        tmp.replace(out)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
     log(f"[{category}] Digest saglabāts: {out} (dry_run={dry_run})")
     return 0
 
