@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 .deploy.lock
 .publish.lock
+.publish-work.*/
 backups/
 digest.py.backup-*
 publish.sh.backup-*
