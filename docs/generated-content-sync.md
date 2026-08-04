@@ -39,6 +39,8 @@ The production publisher may create one direct commit on `main` only for the cur
 
 The helper never performs merge, rebase, reset, history rewrite, or force-push. Network Git operations are bounded by a timeout and disable interactive credential prompts.
 
+The publisher's `.publish-work.*` directories are transient, ignored Git runtime data. They remain outside the explicit three-path staging allowlist and therefore cannot enter a generated commit.
+
 When branch protection is introduced, the production publication identity may receive a narrowly scoped bypass for these generated-content commits. Force-push and branch deletion must remain blocked. Human code changes continue through pull requests.
 
 ## Publication and failure semantics
@@ -112,19 +114,22 @@ git branch recovery/generated-content-<date>-<category> <local-commit-sha>
 
 ## Validation
 
-Run the network-free isolated repository suite with:
+Run both network-free isolated repository suites:
 
 ```bash
 bash tests/test_generated_content_sync.sh
+bash tests/test_publish_generated_content_integration.sh
 ```
 
-The suite creates temporary local bare remotes and covers:
+`test_generated_content_sync.sh` creates temporary local bare remotes and covers:
 
-- complete publication commit, fast-forward push, and exact SHA verification;
+- publication commit, fast-forward push, and exact SHA verification;
 - sibling same-day digest isolation;
 - unrelated working-tree rejection;
 - concurrent remote changes without commit loss or force-push;
 - commit path allowlist enforcement;
 - local-ahead publication blocking.
+
+`test_publish_generated_content_integration.sh` executes the real `publish.sh` with an isolated SQLite database and mocked Hugo build. It verifies the complete sequence: generated content, live publication, database commit, exact-path Git commit, fast-forward push, and local/remote SHA equality.
 
 This implementation does not deploy or alter the production checkout. Activation requires a separate reviewed deployment step.
