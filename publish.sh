@@ -11,6 +11,7 @@ DB="$BASE/data/hermes.db"
 SITE="$BASE/site"
 PUBLIC_DIR="$SITE/public"
 PYTHON="$BASE/venv/bin/python"
+SYNC_HELPER="$BASE/sync_generated_content.sh"
 CAT="${1:?Lietošana: publish.sh <devops|ai|agents> [YYYY-MM-DD]}"
 DATE="${2:-$(date -u +%Y-%m-%d)}"
 
@@ -26,7 +27,7 @@ case "$CAT" in
     *) echo "KĻŪDA: nezināma kategorija '$CAT'" >&2; exit 2 ;;
 esac
 
-for cmd in flock mktemp hugo git rsync tail sed; do
+for cmd in flock mktemp hugo git rsync tail sed timeout; do
     command -v "$cmd" >/dev/null 2>&1 || {
         echo "KĻŪDA: nav atrasta komanda '$cmd'" >&2
         exit 1
@@ -34,6 +35,14 @@ for cmd in flock mktemp hugo git rsync tail sed; do
 done
 [[ -x "$PYTHON" ]] || { echo "KĻŪDA: nav izpildāms $PYTHON" >&2; exit 1; }
 [[ -f "$DB" ]] || { echo "KĻŪDA: nav datubāzes $DB" >&2; exit 1; }
+[[ -f "$SYNC_HELPER" ]] || {
+    echo "KĻŪDA: nav GitHub sinhronizācijas helpera $SYNC_HELPER" >&2
+    exit 1
+}
+bash -n "$SYNC_HELPER" || {
+    echo "KĻŪDA: GitHub sinhronizācijas helperim ir Bash sintakses kļūda" >&2
+    exit 1
+}
 
 exec 9>"$BASE/.publish.lock"
 flock -w 30 9 || {
@@ -64,6 +73,16 @@ fi
 DST_DIR="$SITE/content/$SECTION"
 DST="$DST_DIR/$DATE.md"
 OG="$SITE/static/og/$DATE-$CAT.png"
+DIGEST_GIT_PATH="digests/$(basename "$SRC")"
+CONTENT_GIT_PATH="site/content/$SECTION/$DATE.md"
+OG_GIT_PATH="site/static/og/$DATE-$CAT.png"
+GIT_PATHS=("$DIGEST_GIT_PATH" "$CONTENT_GIT_PATH" "$OG_GIT_PATH")
+
+# Pirms jebkuras publicēšanas mutācijas pārbaudām, ka production checkout un
+# origin/main ir viens un tas pats commits un darba kokā nav neatļautu failu.
+cd "$BASE"
+SYNC_BASE_SHA=$(bash "$SYNC_HELPER" preflight "$CAT" "$DATE" "$DIGEST_GIT_PATH")
+
 mkdir -p "$DST_DIR" "$(dirname "$OG")" "$PUBLIC_DIR"
 
 WORK=$(mktemp -d "$BASE/.publish-work.XXXXXXXX")
@@ -302,16 +321,36 @@ DB_COMMITTED=1
 echo "Publicēts: https://tech.rozkalns.net/$SECTION/$DATE/"
 
 cd "$BASE"
-# Stage tikai šīs publikācijas faili, nevis backup un citi nejauši repo faili.
-GIT_PATHS=(
-    "digests/$(basename "$SRC")"
-    "site/content/$SECTION/$DATE.md"
-    "site/static/og/$DATE-$CAT.png"
-)
-if ! git add -A -- "${GIT_PATHS[@]}"; then
-    echo "BRĪDINĀJUMS: git add neizdevās; lapa un DB jau ir atjauninātas" >&2
-elif ! git diff --cached --quiet; then
-    if ! git commit -q -m "Publish $CAT digest $DATE"; then
-        echo "BRĪDINĀJUMS: git commit neizdevās; lapa un DB jau ir atjauninātas" >&2
-    fi
+# Stage tikai šīs publikācijas trīs atļautos failus. Neizmantojam -A, lai
+# sibling digesti, backup vai citas nejaušas izmaiņas nevar nonākt commitā.
+if ! git add -- "${GIT_PATHS[@]}"; then
+    echo "KĻŪDA: git add neizdevās; lapa un DB jau ir atjauninātas, GitHub sinhronizācija nav veikta" >&2
+    exit 76
 fi
+
+if git diff --cached --quiet; then
+    if ! bash "$SYNC_HELPER" verify-noop "$CAT" "$DATE" "$DIGEST_GIT_PATH" "$SYNC_BASE_SHA"; then
+        echo "KĻŪDA: GitHub no-op verifikācija neizdevās; publicētā lapa un DB netiek atgrieztas atpakaļ" >&2
+        exit 76
+    fi
+    echo "GitHub sinhronizācija: nav jauna content commita"
+    exit 0
+fi
+
+if ! bash "$SYNC_HELPER" verify-index "$CAT" "$DATE" "$DIGEST_GIT_PATH" "$SYNC_BASE_SHA"; then
+    echo "KĻŪDA: staged publikācijas ceļu pārbaude neizdevās; lapa un DB jau ir atjauninātas" >&2
+    exit 76
+fi
+
+if ! git commit -q -m "Publish $CAT digest $DATE"; then
+    echo "KĻŪDA: git commit neizdevās; lapa un DB jau ir atjauninātas, staged faili saglabāti" >&2
+    exit 76
+fi
+
+PUBLISH_COMMIT_SHA=$(git rev-parse HEAD)
+if ! bash "$SYNC_HELPER" sync "$CAT" "$DATE" "$DIGEST_GIT_PATH" "$SYNC_BASE_SHA" "$PUBLISH_COMMIT_SHA"; then
+    echo "KĻŪDA: GitHub sinhronizācija neizdevās; publicētā lapa un DB saglabātas, lokālais commits $PUBLISH_COMMIT_SHA nav dzēsts" >&2
+    exit 76
+fi
+
+echo "GitHub sinhronizēts: $PUBLISH_COMMIT_SHA"
