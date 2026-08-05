@@ -47,7 +47,8 @@ class MainPolicyPayloadTests(unittest.TestCase):
         )
 
     def test_only_code_gate_has_deploy_key_bypass(self) -> None:
-        payload = policy.code_gate_ruleset_payload("validate")
+        identity = policy.StatusCheckIdentity("validate", 15368)
+        payload = policy.code_gate_ruleset_payload(identity)
         self.assertEqual(
             payload["bypass_actors"],
             [
@@ -65,13 +66,19 @@ class MainPolicyPayloadTests(unittest.TestCase):
         )
         self.assertEqual(
             rules["required_status_checks"]["parameters"]["required_status_checks"],
-            [{"context": "validate"}],
+            [{"context": "validate", "integration_id": 15368}],
         )
         self.assertTrue(
             rules["required_status_checks"]["parameters"][
                 "strict_required_status_checks_policy"
             ]
         )
+
+    def test_invalid_status_integration_fails_closed(self) -> None:
+        with self.assertRaisesRegex(policy.PolicyError, "positive integer"):
+            policy.code_gate_ruleset_payload(
+                policy.StatusCheckIdentity("validate", 0)
+            )
 
     def test_repository_settings_disable_non_squash_merges(self) -> None:
         self.assertEqual(
@@ -137,7 +144,7 @@ class MainPolicyPreflightTests(unittest.TestCase):
                 "Hermes publisher",
             )
 
-    def test_successful_check_must_exist_on_exact_sha(self) -> None:
+    def test_successful_check_returns_exact_app_integration(self) -> None:
         sha = "a" * 40
         path = (
             "/repos/rozkalnsandris/hermes-tech/commits/"
@@ -147,13 +154,81 @@ class MainPolicyPreflightTests(unittest.TestCase):
             {
                 ("GET", path): {
                     "check_runs": [
-                        {"name": "validate", "conclusion": "success"},
+                        {
+                            "name": "validate",
+                            "conclusion": "success",
+                            "app": {"id": 15368},
+                        },
                         {"name": "other", "conclusion": "failure"},
                     ]
                 }
             }
         )
-        policy.require_successful_check(api, self.repository, sha, "validate")
+        identity = policy.require_successful_check(
+            api,
+            self.repository,
+            sha,
+            "validate",
+        )
+        self.assertEqual(
+            identity,
+            policy.StatusCheckIdentity("validate", 15368),
+        )
+
+    def test_successful_check_without_app_identity_fails_closed(self) -> None:
+        sha = "c" * 40
+        path = (
+            "/repos/rozkalnsandris/hermes-tech/commits/"
+            f"{sha}/check-runs?per_page=100"
+        )
+        api = RecordingApi(
+            {
+                ("GET", path): {
+                    "check_runs": [
+                        {"name": "validate", "conclusion": "success"},
+                    ]
+                }
+            }
+        )
+        with self.assertRaisesRegex(policy.PolicyError, "app integration"):
+            policy.require_successful_check(
+                api,
+                self.repository,
+                sha,
+                "validate",
+            )
+
+    def test_same_check_from_multiple_apps_fails_closed(self) -> None:
+        sha = "d" * 40
+        path = (
+            "/repos/rozkalnsandris/hermes-tech/commits/"
+            f"{sha}/check-runs?per_page=100"
+        )
+        api = RecordingApi(
+            {
+                ("GET", path): {
+                    "check_runs": [
+                        {
+                            "name": "validate",
+                            "conclusion": "success",
+                            "app": {"id": 15368},
+                        },
+                        {
+                            "name": "validate",
+                            "conclusion": "success",
+                            "app": {"id": 99999},
+                        },
+                    ]
+                }
+            }
+        )
+        with self.assertRaisesRegex(policy.PolicyError, "multiple app integrations"):
+            policy.require_successful_check(
+                api,
+                self.repository,
+                sha,
+                "validate",
+            )
 
     def test_apply_confirmation_is_checked_before_api_access(self) -> None:
         api = RecordingApi()
