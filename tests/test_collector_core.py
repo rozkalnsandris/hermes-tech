@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 import sqlite3
 import tempfile
 import time
@@ -9,6 +10,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import collector_core
+import hermes_db
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sqlite"
 
 
 class CollectorParsingTests(unittest.TestCase):
@@ -53,54 +57,41 @@ class CollectorParsingTests(unittest.TestCase):
         self.assertEqual(collector_core.entry_published(SimpleNamespace()), "")
 
 
-class CollectorMigrationTests(unittest.TestCase):
-    def test_representative_old_schema_migrates_idempotently(self) -> None:
-        conn = sqlite3.connect(":memory:")
+class CollectorSchemaStartupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp_obj = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp_obj.cleanup)
+        self.root = Path(self.tmp_obj.name)
+        self.db = self.root / "data" / "hermes.db"
+        self.log = self.root / "logs" / "collector.log"
+        self.db.parent.mkdir(parents=True)
+
+    def load_fixture(self, name: str) -> None:
+        conn = sqlite3.connect(self.db)
+        conn.executescript((FIXTURES / name).read_text(encoding="utf-8"))
+        conn.commit()
+        conn.close()
+
+    def test_current_unversioned_database_is_not_implicitly_adopted(self) -> None:
+        self.load_fixture("schema_v3_unversioned.sql")
+        before = sha256(self.db.read_bytes()).hexdigest()
+        with (
+            patch.object(collector_core, "DB", self.db),
+            patch.object(collector_core, "LOG", self.log),
+        ):
+            self.assertEqual(collector_core.main(), 1)
+        self.assertEqual(sha256(self.db.read_bytes()).hexdigest(), before)
+        conn = sqlite3.connect(self.db)
         self.addCleanup(conn.close)
-        conn.executescript(
-            """
-            CREATE TABLE articles (
-                id INTEGER PRIMARY KEY,
-                source TEXT NOT NULL,
-                title TEXT NOT NULL,
-                link TEXT NOT NULL UNIQUE,
-                published TEXT,
-                summary TEXT,
-                fetched_at TEXT NOT NULL,
-                digest_date TEXT
-            );
-            CREATE TABLE sources (
-                name TEXT PRIMARY KEY,
-                fetch_ok INTEGER DEFAULT 0,
-                fetch_fail INTEGER DEFAULT 0,
-                collected INTEGER DEFAULT 0,
-                picked INTEGER DEFAULT 0
-            );
-            """
-        )
+        self.assertEqual(hermes_db.user_version(conn), 0)
+        self.assertIn("preflight", self.log.read_text(encoding="utf-8"))
 
-        for _ in range(2):
-            collector_core.migrate(conn)
-            collector_core.migrate_routing(conn)
-
-        columns = {
-            row[1] for row in conn.execute("PRAGMA table_info(articles)").fetchall()
-        }
-        self.assertTrue(
-            {"category", "content", "primary_category", "topic_key", "routed_at"}
-            <= columns
-        )
-        indexes = {
-            row[1] for row in conn.execute("PRAGMA index_list(articles)").fetchall()
-        }
-        self.assertTrue(
-            {
-                "idx_articles_cat",
-                "idx_articles_primary_cat",
-                "idx_articles_topic_key",
-            }
-            <= indexes
-        )
+    def test_new_empty_database_is_initialized_to_current_schema(self) -> None:
+        with patch.object(collector_core, "DB", self.db):
+            conn = collector_core.open_database()
+        self.addCleanup(conn.close)
+        self.assertEqual(hermes_db.user_version(conn), 3)
+        hermes_db.assert_schema(conn, 3)
 
 
 class CollectorMainThresholdTests(unittest.TestCase):
@@ -112,7 +103,11 @@ class CollectorMainThresholdTests(unittest.TestCase):
         self.feeds = self.root / "feeds.txt"
         self.log = self.root / "logs" / "collector.log"
 
-    def run_main(self, feed_lines: list[str], parsed_by_url: dict[str, object]) -> int:
+    def run_main(
+        self,
+        feed_lines: list[str],
+        parsed_by_url: dict[str, object],
+    ) -> int:
         self.feeds.write_text("\n".join(feed_lines) + "\n", encoding="utf-8")
 
         def fake_parse(url: str) -> object:
@@ -125,7 +120,11 @@ class CollectorMainThresholdTests(unittest.TestCase):
             patch.object(collector_core, "DB", self.db),
             patch.object(collector_core, "FEEDS", self.feeds),
             patch.object(collector_core, "LOG", self.log),
-            patch.object(collector_core.feedparser, "parse", side_effect=fake_parse),
+            patch.object(
+                collector_core.feedparser,
+                "parse",
+                side_effect=fake_parse,
+            ),
         ):
             return collector_core.main()
 
@@ -164,6 +163,7 @@ class CollectorMainThresholdTests(unittest.TestCase):
             "SELECT name, fetch_ok, fetch_fail FROM sources ORDER BY name"
         ).fetchall()
         self.assertEqual(rows, [("A", 0, 1), ("B", 0, 1)])
+        self.assertEqual(hermes_db.user_version(conn), 3)
 
     def test_more_failures_than_successes_fail_closed(self) -> None:
         rc = self.run_main(
