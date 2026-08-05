@@ -38,6 +38,12 @@ This ruleset applies to `refs/heads/main` and enforces:
 - the `validate` status check must pass against the latest `main`;
 - review threads must be resolved.
 
+The preflight reads the successful `validate` check run from the exact supplied
+`main` SHA and resolves its GitHub App integration ID. The required-check rule
+is bound to both the context and that integration ID. Preflight fails if the
+check has no App identity or if the same context was produced successfully by
+more than one App integration.
+
 The only bypass actor is the repository's deploy-key actor. GitHub represents
 that actor without a key-specific ID, so the preflight requires exactly one
 write-enabled deploy key and requires its title to match the supplied value.
@@ -73,7 +79,8 @@ if:
 - classic branch protection already targets `main`;
 - an unmanaged active ruleset also targets `main`;
 - `main` moved from the explicitly supplied SHA;
-- the `validate` check is not successful on that exact SHA.
+- the `validate` check is not successful on that exact SHA;
+- the successful check cannot be bound to one exact GitHub App integration.
 
 Do not replace this with a broad repository-admin bypass. The direct publisher
 identity must remain narrower than the human administrator identity.
@@ -97,7 +104,8 @@ python tools/configure_github_main_policy.py preflight \
 ```
 
 The command is read-only. Preserve its JSON output as evidence. Do not continue
-if any precondition fails.
+if any precondition fails. The `status_check` evidence contains both the check
+context and the resolved App integration ID.
 
 ## Apply
 
@@ -140,6 +148,7 @@ Successful output must contain:
 
 - `"verified": true`;
 - the exact repository and `main` SHA;
+- the required-check context and GitHub App integration ID;
 - the expected deploy-key ID and title;
 - both managed ruleset IDs;
 - merge settings with only squash enabled.
