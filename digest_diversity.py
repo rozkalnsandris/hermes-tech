@@ -52,7 +52,7 @@ def _article_label(article: dict, index: int) -> str:
 
 def _vendor_key(article: dict) -> str:
     combined = _normalise_words(
-        f"{Article.get('title', '')} {article.get('source', '')}"
+        f"{article.get('title', '')} {article.get('source', '')}"
     )
     padded = f" {combined} "
     for vendor, keywords in _VENDOR_PATTERNS:
