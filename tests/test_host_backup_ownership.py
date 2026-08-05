@@ -64,7 +64,7 @@ class HostBackupOwnershipTests(unittest.TestCase):
             self.assertIn(marker, text)
 
     def test_production_boundary_is_explicit(self) -> None:
-        text = DOC.read_text(encoding="utf-8")
+        text = " ".join(DOC.read_text(encoding="utf-8").split())
         required = (
             "does not read, compare, install, reload, execute, or change",
             "/usr/local/sbin/rpi5-backup",
