@@ -31,6 +31,7 @@ if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
 
 import digest_core as _core
+from digest_diversity import install_diversity_contracts
 from hermes_runtime import (
     EXIT_OPERATIONAL,
     EXIT_USAGE,
@@ -63,6 +64,7 @@ except RuntimeConfigError as exc:
     raise SystemExit(EXIT_USAGE)
 
 _configure_core(PATHS)
+install_diversity_contracts(_core)
 _export_core_api()
 
 
