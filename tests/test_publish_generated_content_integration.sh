@@ -150,7 +150,7 @@ conn.close()
 PY_DB_CREATE
 
 set +e
-HOME="$publish_home" PATH="$fakebin:$PATH" \
+HOME="$publish_home" HERMES_TECH_ROOT="$prod" PATH="$fakebin:$PATH" \
     bash "$prod/publish.sh" devops 2026-08-05 \
     >"$TMP/publish.out" 2>"$TMP/publish.err"
 publish_rc=$?
