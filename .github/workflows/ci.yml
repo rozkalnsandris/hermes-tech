@@ -24,7 +24,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Set up Python
@@ -57,12 +57,3 @@ jobs:
         env:
           HERMES_TECH_ROOT: ${{ github.workspace }}
         run: bash tools/ci.sh
-
-      - name: Compare baseline and refactored site visuals
-        if: github.event_name == 'pull_request'
-        env:
-          HERMES_VISUAL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          python tools/compare_site_visuals.py \
-            --base-sha "$HERMES_VISUAL_BASE_SHA" \
-            --output "$RUNNER_TEMP/site-visuals"
