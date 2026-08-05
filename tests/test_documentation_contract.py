@@ -139,8 +139,8 @@ class DocumentationContractTests(unittest.TestCase):
         footer = FOOTER.read_text(encoding="utf-8")
         self.assertIn("does **not** require Andris to approve every digest", how)
         self.assertIn(
-            "may be published automatically",
-            " ".join(llms.split()),
+            normalized_words("may be published automatically"),
+            normalized_words(llms),
         )
         self.assertIn("without per-run human approval", footer)
 
