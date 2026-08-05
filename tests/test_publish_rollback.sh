@@ -26,11 +26,11 @@ fail() {
     exit 1
 }
 
-remote="$TMP/publish.git"
+remote="$TMP/rollback.git"
 seed="$TMP/seed"
-publish_home="$TMP/home"
-prod="$publish_home/hermes-tech"
+prod="$TMP/prod"
 fakebin="$TMP/fakebin"
+real_python=$(command -v python3)
 
 git init --bare --quiet "$remote"
 git init --quiet --initial-branch=main "$seed"
@@ -59,22 +59,27 @@ sys.stdout.write(sys.stdin.read())
 PY_FORMAT
 
 cat > "$prod/ogcard.py" <<'PY_OG'
+import os
 from pathlib import Path
 import sys
 
-path = (
-    Path.home()
-    / "hermes-tech"
-    / "site"
-    / "static"
-    / "og"
-    / f"{sys.argv[1]}.png"
-)
+root = Path(os.environ["HERMES_TECH_ROOT"])
+path = root / "site" / "static" / "og" / f"{sys.argv[1]}.png"
 path.parent.mkdir(parents=True, exist_ok=True)
-path.write_bytes(b"test-og")
+path.write_bytes(b"new-og")
 PY_OG
 
-ln -s "$(command -v python3)" "$prod/venv/bin/python"
+cat > "$prod/venv/bin/python" <<PY_WRAPPER
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if [[ "\${1:-}" == "-" && "\${*: -1}" == "update" ]]; then
+    cat >/dev/null
+    echo 'synthetic DB update failure after live deployment' >&2
+    exit 42
+fi
+exec "$real_python" "\$@"
+PY_WRAPPER
+chmod 700 "$prod/venv/bin/python"
 
 cat > "$fakebin/hugo" <<'SH_HUGO'
 #!/usr/bin/env bash
@@ -92,15 +97,16 @@ while (( $# > 0 )); do
     esac
 done
 [[ -n "$destination" ]]
-mkdir -p "$destination"
-printf '<html>test</html>\n' > "$destination/index.html"
+mkdir -p "$destination/assets"
+printf '<html>new-public</html>\n' > "$destination/index.html"
+printf 'new-asset\n' > "$destination/assets/new.txt"
 SH_HUGO
 chmod 700 "$fakebin/hugo"
 
-git -C "$prod" add -- \
-    .gitignore publish.sh sync_generated_content.sh format_digest.py ogcard.py
-git -C "$prod" commit --quiet -m 'Add publication runtime'
-git -C "$prod" push --quiet origin main
+printf 'old-content\n' > "$prod/site/content/digest/2026-08-05.md"
+printf 'old-og\n' > "$prod/site/static/og/2026-08-05-devops.png"
+printf '<html>old-public</html>\n' > "$prod/site/public/index.html"
+printf 'keep-me\n' > "$prod/site/public/old-only.txt"
 
 cat > "$prod/digests/2026-08-05-devops.md" <<'MD_DIGEST'
 <!-- selected_ids: 1,2,3 -->
@@ -118,10 +124,8 @@ Second body.
 
 Third body.
 MD_DIGEST
-printf 'pending ai\n' > "$prod/digests/2026-08-05-ai.md"
-printf 'pending agents\n' > "$prod/digests/2026-08-05-agents.md"
 
-python3 - "$prod/data/hermes.db" <<'PY_DB_CREATE'
+"$real_python" - "$prod/data/hermes.db" <<'PY_DB_CREATE'
 import sqlite3
 import sys
 
@@ -149,57 +153,39 @@ conn.commit()
 conn.close()
 PY_DB_CREATE
 
+git -C "$prod" add -- \
+    .gitignore publish.sh sync_generated_content.sh format_digest.py ogcard.py \
+    site/content/digest/2026-08-05.md \
+    site/static/og/2026-08-05-devops.png
+git -C "$prod" commit --quiet -m 'Add rollback publication fixture'
+git -C "$prod" push --quiet origin main
+baseline=$(git -C "$prod" rev-parse HEAD)
+
 set +e
-HOME="$publish_home" HERMES_TECH_ROOT="$prod" PATH="$fakebin:$PATH" \
+HERMES_TECH_ROOT="$prod" PATH="$fakebin:$PATH" \
     bash "$prod/publish.sh" devops 2026-08-05 \
     >"$TMP/publish.out" 2>"$TMP/publish.err"
-publish_rc=$?
+rc=$?
 set -e
-if (( publish_rc != 0 )); then
-    cat "$TMP/publish.out" >&2 || true
-    cat "$TMP/publish.err" >&2 || true
-    fail "publish.sh integration failed with rc=$publish_rc"
-fi
 
-publish_head=$(git -C "$prod" rev-parse HEAD)
-publish_remote_head=$(git --git-dir="$remote" rev-parse refs/heads/main)
-[[ "$publish_head" == "$publish_remote_head" ]] || \
-    fail 'publish.sh did not leave local and remote at the same SHA'
-[[ "$(git -C "$prod" show -s --format=%s HEAD)" == \
-   'Publish devops digest 2026-08-05' ]] || \
-    fail 'publish.sh created an unexpected commit subject'
+(( rc != 0 )) || fail 'publish unexpectedly succeeded despite synthetic DB failure'
+grep -q 'synthetic DB update failure after live deployment' "$TMP/publish.err" || \
+    fail 'synthetic DB failure was not reached'
+grep -q 'atjaunoju iepriekšējos vietnes failus' "$TMP/publish.err" || \
+    fail 'rollback path did not report file restoration'
 
-published_content="$TMP/published-content.md"
-git --git-dir="$remote" show \
-    "$publish_remote_head:site/content/digest/2026-08-05.md" \
-    > "$published_content" || \
-    fail 'publish.sh content file was not synchronized'
-git --git-dir="$remote" show \
-    "$publish_remote_head:site/static/og/2026-08-05-devops.png" >/dev/null || \
-    fail 'publish.sh OG file was not synchronized'
-if git --git-dir="$remote" cat-file -e \
-    "$publish_remote_head:digests/2026-08-05-ai.md" 2>/dev/null; then
-    fail 'publish.sh leaked a sibling digest into the publication commit'
-fi
+[[ "$(cat "$prod/site/content/digest/2026-08-05.md")" == 'old-content' ]] || \
+    fail 'content source was not restored'
+[[ "$(cat "$prod/site/static/og/2026-08-05-devops.png")" == 'old-og' ]] || \
+    fail 'OG image was not restored'
+[[ "$(cat "$prod/site/public/index.html")" == '<html>old-public</html>' ]] || \
+    fail 'public index was not restored'
+[[ "$(cat "$prod/site/public/old-only.txt")" == 'keep-me' ]] || \
+    fail 'public-only previous file was not restored'
+[[ ! -e "$prod/site/public/assets/new.txt" ]] || \
+    fail 'new public asset survived rollback'
 
-[[ "$(sed -n '1p' "$published_content")" == '---' ]] || \
-    fail 'Hugo front matter does not start with delimiter'
-grep -Fxq 'title: "What mattered in DevOps yesterday — 2026-08-05"' \
-    "$published_content" || fail 'Hugo front matter title is wrong'
-grep -Fxq 'date: 2026-08-05T07:00:00+02:00' "$published_content" || \
-    fail 'Hugo front matter date/timezone is wrong'
-grep -Fxq 'images: ["/og/2026-08-05-devops.png"]' "$published_content" || \
-    fail 'Hugo front matter OG image is wrong'
-grep -Fxq 'topics:' "$published_content" || \
-    fail 'Hugo front matter topics key is missing'
-[[ "$(grep -c '^  - "' "$published_content")" -eq 3 ]] || \
-    fail 'Hugo front matter does not contain exactly three topics'
-for topic in 'First topic' 'Second topic' 'Third topic'; do
-    grep -Fxq "  - \"$topic\"" "$published_content" || \
-        fail "Hugo front matter is missing topic: $topic"
-done
-
-python3 - "$prod/data/hermes.db" <<'PY_DB_VERIFY'
+"$real_python" - "$prod/data/hermes.db" <<'PY_DB_VERIFY'
 import sqlite3
 import sys
 
@@ -208,18 +194,25 @@ rows = conn.execute(
     "SELECT id, digest_date FROM articles ORDER BY id"
 ).fetchall()
 picked = conn.execute(
-    "SELECT picked FROM sources WHERE name = 'test-source'"
+    "SELECT picked FROM sources WHERE name='test-source'"
 ).fetchone()[0]
 conn.close()
-
-expected = [(1, '2026-08-05'), (2, '2026-08-05'), (3, '2026-08-05')]
-if rows != expected:
-    raise SystemExit(f"unexpected article state: {rows}")
-if picked != 1:
-    raise SystemExit(f"unexpected source picked count: {picked}")
+if rows != [(1, None), (2, None), (3, None)]:
+    raise SystemExit(f"DB changed despite rollback: {rows}")
+if picked != 0:
+    raise SystemExit(f"source picked changed despite rollback: {picked}")
 PY_DB_VERIFY
 
-grep -q 'HERMES_GIT_SYNC_OK' "$TMP/publish.out" || \
-    fail 'publish.sh did not report verified Git synchronization'
+[[ "$(git -C "$prod" rev-parse HEAD)" == "$baseline" ]] || \
+    fail 'rollback failure created a local commit'
+[[ "$(git --git-dir="$remote" rev-parse refs/heads/main)" == "$baseline" ]] || \
+    fail 'rollback failure changed remote main'
+git -C "$prod" diff --quiet -- \
+    site/content/digest/2026-08-05.md \
+    site/static/og/2026-08-05-devops.png || \
+    fail 'tracked publication files remain modified after rollback'
+if find "$prod" -maxdepth 1 -type d -name '.publish-work.*' | grep -q .; then
+    fail 'temporary publication work directory was not removed'
+fi
 
-printf 'PASS: real publish.sh completed front matter, DB update, commit, push, and SHA verification\n'
+printf 'PASS: failed DB update restored content, OG, public tree, DB, and Git state\n'
