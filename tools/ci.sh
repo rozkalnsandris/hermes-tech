@@ -25,6 +25,7 @@ print("Python:", sys.version.split()[0])
 PY
 
 python tools/check_dependency_sync.py
+python tools/check_repository_hygiene.py
 python - <<'PY_BOOTSTRAP'
 from importlib.metadata import version
 expected = {"pip": "26.1.2", "setuptools": "83.0.0"}
