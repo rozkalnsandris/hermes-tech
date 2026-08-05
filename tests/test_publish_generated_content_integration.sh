@@ -169,8 +169,10 @@ publish_remote_head=$(git --git-dir="$remote" rev-parse refs/heads/main)
    'Publish devops digest 2026-08-05' ]] || \
     fail 'publish.sh created an unexpected commit subject'
 
+published_content="$TMP/published-content.md"
 git --git-dir="$remote" show \
-    "$publish_remote_head:site/content/digest/2026-08-05.md" >/dev/null || \
+    "$publish_remote_head:site/content/digest/2026-08-05.md" \
+    > "$published_content" || \
     fail 'publish.sh content file was not synchronized'
 git --git-dir="$remote" show \
     "$publish_remote_head:site/static/og/2026-08-05-devops.png" >/dev/null || \
@@ -179,6 +181,23 @@ if git --git-dir="$remote" cat-file -e \
     "$publish_remote_head:digests/2026-08-05-ai.md" 2>/dev/null; then
     fail 'publish.sh leaked a sibling digest into the publication commit'
 fi
+
+[[ "$(sed -n '1p' "$published_content")" == '---' ]] || \
+    fail 'Hugo front matter does not start with delimiter'
+grep -Fxq 'title: "What mattered in DevOps yesterday — 2026-08-05"' \
+    "$published_content" || fail 'Hugo front matter title is wrong'
+grep -Fxq 'date: 2026-08-05T07:00:00+02:00' "$published_content" || \
+    fail 'Hugo front matter date/timezone is wrong'
+grep -Fxq 'images: ["/og/2026-08-05-devops.png"]' "$published_content" || \
+    fail 'Hugo front matter OG image is wrong'
+grep -Fxq 'topics:' "$published_content" || \
+    fail 'Hugo front matter topics key is missing'
+[[ "$(grep -c '^  - "' "$published_content")" -eq 3 ]] || \
+    fail 'Hugo front matter does not contain exactly three topics'
+for topic in 'First topic' 'Second topic' 'Third topic'; do
+    grep -Fxq "  - \"$topic\"" "$published_content" || \
+        fail "Hugo front matter is missing topic: $topic"
+done
 
 python3 - "$prod/data/hermes.db" <<'PY_DB_VERIFY'
 import sqlite3
@@ -203,4 +222,4 @@ PY_DB_VERIFY
 grep -q 'HERMES_GIT_SYNC_OK' "$TMP/publish.out" || \
     fail 'publish.sh did not report verified Git synchronization'
 
-printf 'PASS: real publish.sh completed publication, DB update, commit, push, and SHA verification\n'
+printf 'PASS: real publish.sh completed front matter, DB update, commit, push, and SHA verification\n'
