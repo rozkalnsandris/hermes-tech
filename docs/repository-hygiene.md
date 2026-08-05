@@ -53,6 +53,53 @@ tests both sides of the policy: transient sentinels must be ignored, while
 representative digest, content, OG, editorial, and brand paths must not be
 ignored.
 
+## Host-wide backup ownership
+
+The encrypted Raspberry Pi host backup is infrastructure, not a Hermes Tech
+application component. Its canonical reviewed source is the private
+`rozkalnsandris/RPi5_main` repository at ownership-adoption commit:
+
+```text
+762174f12b72ad512600cfe2fc69bc80a530dadb
+```
+
+The transfer was reviewed in `RPi5_main` PR #28. Machine-readable source blob
+and SHA-256 bindings are stored there at:
+
+```text
+ops/backup/source-provenance.json
+```
+
+That provenance binds the pre-cleanup Hermes Tech snapshot
+`194083f0d850c888d23f751aeb51e69a561a047a` and original introduction commit
+`36b8223710fd2dbe90b6d69898ffc17c34285da1`.
+
+After the transfer, Hermes Tech must not track duplicate host-wide
+implementations at these paths:
+
+- `ops/bin/rpi5-backup`;
+- `ops/backup/rpi5-backup.conf.example`;
+- `ops/cron.d/rpi5-backup`;
+- `ops/logrotate.d/rpi5-backup`.
+
+Hermes Tech retains only its application-specific backup expectations:
+
+- preserve the Git checkout and its history;
+- include the runtime `.env` only inside the encrypted host backup, never Git;
+- create a consistent SQLite snapshot of `data/hermes.db` and validate it with
+  `PRAGMA quick_check`;
+- exclude `venv/`, logs, runtime locks, Python caches, the live database file
+  during tree copy, and SQLite sidecars before adding the validated snapshot.
+
+This repository cleanup does not read, compare, install, reload, execute, or
+change `/usr/local/sbin/rpi5-backup`, `/etc/rpi5-backup.conf`, the cron entry,
+the logrotate entry, keys, credentials, archives, retention, or remote storage.
+Any future installed-file verification or deployment must start from an exact
+`RPi5_main` commit and receive separate explicit production approval.
+
+The deleted duplicates remain recoverable from normal Git history at the
+pre-cleanup Hermes Tech commit shown above; no history is rewritten.
+
 ## Removed repository clutter
 
 `site/.hugo_build.lock` was an empty transient Hugo lock and is removed from
