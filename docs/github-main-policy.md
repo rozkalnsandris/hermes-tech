@@ -55,7 +55,7 @@ the account or token cannot read repository rulesets.
 Use a fine-grained personal access token or GitHub App user token with:
 
 - repository Administration: read and write;
-- Actions: read;
+- Checks: read;
 - Metadata: read.
 
 Store the token only in the process environment. Never place it in `.env`, a
