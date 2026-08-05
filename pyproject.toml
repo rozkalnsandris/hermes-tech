@@ -1,0 +1,16 @@
+[project]
+name = "hermes-tech"
+version = "0.1.0"
+description = "Hermes Tech collection, digest generation, and Hugo publication pipeline"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "feedparser==6.0.12",
+  "Pillow==12.3.0",
+  "requests==2.34.2",
+]
+
+[tool.hermes]
+python = "3.11.9"
+hugo = "0.111.3"
+pip = "26.1.2"
+setuptools = "83.0.0"
