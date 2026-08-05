@@ -23,10 +23,9 @@ one. Every article on this site is labeled as AI-generated.
    every linked article page.
 2. **Route, score & write.** Recent entries are grouped into real-world events,
    assigned one primary lane, and reduced to one representative per topic. The
-   configured language model, currently DeepSeek V4 Flash, selects five items
-   per digest and writes them in the version-controlled Hermes voice. Selection
-   and output must remain tied to supplied article IDs and canonical source
-   links.
+   configured language model, currently DeepSeek V4 Flash, selects 5 items per
+   digest and writes them in the version-controlled Hermes voice. Selection and
+   output must remain tied to supplied article IDs and canonical source links.
 3. **Validate.** Deterministic checks enforce topic uniqueness, vendor
    diversity, source reconciliation, analysis length, banned marketing
    language, JSON structure, and cross-category ownership. Failed drafts may be
