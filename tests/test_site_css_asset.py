@@ -3,6 +3,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from html import unescape
 from pathlib import Path
 
 
@@ -20,7 +21,10 @@ INTEGRITY_RE = re.compile(r"^sha384-[A-Za-z0-9+/=]+$")
 def stylesheet_reference(html: str) -> tuple[str, str]:
     stylesheet_links = []
     for tag in LINK_RE.findall(html):
-        attributes = dict(ATTRIBUTE_RE.findall(tag))
+        attributes = {
+            name: unescape(value)
+            for name, value in ATTRIBUTE_RE.findall(tag)
+        }
         if attributes.get("rel") == "stylesheet":
             stylesheet_links.append(attributes)
 
