@@ -56,6 +56,17 @@ def _export_core_api() -> None:
         globals()[name] = getattr(_core, name)
 
 
+def _install_diversity_contracts() -> None:
+    # Minimal fake cores used by isolated runtime-root tests intentionally do not
+    # implement digest selection. Real Hermes cores do, and must load the
+    # fail-closed diversity module before their API is exported.
+    if not hasattr(_core, "_resolve_digest_selected_ids"):
+        return
+    from digest_diversity import install_diversity_contracts
+
+    install_diversity_contracts(_core)
+
+
 try:
     PATHS = RuntimePaths.from_env()
 except RuntimeConfigError as exc:
@@ -63,6 +74,7 @@ except RuntimeConfigError as exc:
     raise SystemExit(EXIT_USAGE)
 
 _configure_core(PATHS)
+_install_diversity_contracts()
 _export_core_api()
 
 
