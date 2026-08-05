@@ -150,6 +150,7 @@ def capture(
             "--hide-scrollbars",
             "--no-sandbox",
             "--force-device-scale-factor=1",
+            "--force-prefers-reduced-motion",
             f"--window-size={width},{height}",
             "--virtual-time-budget=2000",
             f"--user-data-dir={profile}",
