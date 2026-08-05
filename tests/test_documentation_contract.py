@@ -76,7 +76,10 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn(marker, text)
 
         self.assertNotIn("/home/andris/hermes-tech/data/hermes.db", text)
-        self.assertNotRegex(text, r"(?i)(api[_ -]?key|token)\s*[=:]\s*['\"]?[A-Za-z0-9_-]{16,}")
+        self.assertNotRegex(
+            text,
+            r"(?i)(api[_ -]?key|token)\s*[=:]\s*['\"]?[A-Za-z0-9_-]{16,}",
+        )
 
     def test_dotenv_example_is_complete_used_and_value_free(self) -> None:
         entries = dotenv_entries()
@@ -106,7 +109,10 @@ class DocumentationContractTests(unittest.TestCase):
         for text in (how, llms):
             self.assertIn("entry.content", text)
             self.assertIn("RSS summary", text)
-            self.assertRegex(text, r"does not (?:download|fetch)\s+every linked\s+article page")
+            self.assertRegex(
+                text,
+                r"does not (?:download|fetch)\s+every linked\s+article page",
+            )
 
     def test_model_and_item_count_follow_executable_constants(self) -> None:
         model = source_constant(DIGEST_CORE, "DEEPSEEK_MODEL")
@@ -132,7 +138,10 @@ class DocumentationContractTests(unittest.TestCase):
         llms = LLMS.read_text(encoding="utf-8")
         footer = FOOTER.read_text(encoding="utf-8")
         self.assertIn("does **not** require Andris to approve every digest", how)
-        self.assertIn("may be published automatically", llms)
+        self.assertIn(
+            "may be published automatically",
+            " ".join(llms.split()),
+        )
         self.assertIn("without per-run human approval", footer)
 
     def test_stale_fixed_claims_are_absent_from_public_surfaces(self) -> None:
@@ -145,8 +154,13 @@ class DocumentationContractTests(unittest.TestCase):
             "under €1 per month",
             "under 1 EUR/month",
         )
-        fixed_source_count = re.compile(r"(?i)(?:about|approximately|~)?\s*\d+\s+RSS sources")
-        fixed_cost = re.compile(r"(?i)(?:under|less than|about|approximately|~)\s*[€$]?\d+(?:[.,]\d+)?\s*(?:EUR|euro|€)?\s*/?\s*month")
+        fixed_source_count = re.compile(
+            r"(?i)(?:about|approximately|~)?\s*\d+\s+RSS sources"
+        )
+        fixed_cost = re.compile(
+            r"(?i)(?:under|less than|about|approximately|~)\s*"
+            r"[€$]?\d+(?:[.,]\d+)?\s*(?:EUR|euro|€)?\s*/?\s*month"
+        )
 
         for path in PUBLIC_SURFACES:
             text = path.read_text(encoding="utf-8")
