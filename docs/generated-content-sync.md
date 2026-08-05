@@ -43,6 +43,19 @@ The publisher's `.publish-work.*` directories are transient, ignored Git runtime
 
 When branch protection is introduced, the production publication identity may receive a narrowly scoped bypass for these generated-content commits. Force-push and branch deletion must remain blocked. Human code changes continue through pull requests.
 
+### Layered GitHub rulesets
+
+The bypass must not be placed on the same ruleset that protects branch history. GitHub ruleset bypass applies to every rule in that ruleset, so a single combined policy would also let the publisher bypass deletion and non-fast-forward protection.
+
+Hermes Tech therefore uses two repository rulesets targeting `refs/heads/main`:
+
+1. `Hermes Tech main integrity` has no bypass actors and blocks branch deletion, non-fast-forward updates, and non-linear history.
+2. `Hermes Tech code PR gate` requires a pull request, permits only squash merge, requires the `validate` check, and requires resolved review threads. Its only bypass actor is the repository deploy-key actor used by the generated-content publisher.
+
+GitHub represents a deploy-key bypass without a key-specific actor ID. Before activation, `tools/configure_github_main_policy.py` therefore requires exactly one write-enabled deploy key and an exact expected key title. Read-only deploy keys cannot push. The configurator also rejects existing classic protection or unmanaged active rulesets targeting `main`, so overlapping policy is never silently accepted.
+
+The complete SHA-bound preflight, apply, independent verification, permissions, and failure procedure is documented in `docs/github-main-policy.md`. GitHub policy activation is repository administration only. Proving that the RPi5 checkout actually uses the intended key and running a generated publication canary remain separate, explicitly approved production actions.
+
 ## Publication and failure semantics
 
 The Git preflight runs before Hugo content, live site files, or the database are changed. A dirty checkout, local-ahead state, remote-ahead state, or divergence therefore blocks publication before mutation.
