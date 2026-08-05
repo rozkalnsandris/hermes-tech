@@ -11,12 +11,32 @@ SITE = ROOT / "site"
 BASE_TEMPLATE = SITE / "layouts" / "_default" / "baseof.html"
 CSS_SOURCE = SITE / "assets" / "css" / "site.css"
 
-STYLESHEET_RE = re.compile(
-    r'<link rel="stylesheet" '
-    r'href="(?P<href>/css/site\.min\.[0-9a-f]+\.css)" '
-    r'integrity="(?P<integrity>sha384-[A-Za-z0-9+/=]+)" '
-    r'crossorigin="anonymous">'
-)
+LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+ATTRIBUTE_RE = re.compile(r'([A-Za-z_:][-A-Za-z0-9_:.]*)="([^"]*)"')
+FINGERPRINTED_CSS_RE = re.compile(r"^/css/site\.min\.[0-9a-f]+\.css$")
+INTEGRITY_RE = re.compile(r"^sha384-[A-Za-z0-9+/=]+$")
+
+
+def stylesheet_reference(html: str) -> tuple[str, str]:
+    stylesheet_links = []
+    for tag in LINK_RE.findall(html):
+        attributes = dict(ATTRIBUTE_RE.findall(tag))
+        if attributes.get("rel") == "stylesheet":
+            stylesheet_links.append(attributes)
+
+    if len(stylesheet_links) != 1:
+        raise AssertionError(f"expected one stylesheet link, found {stylesheet_links!r}")
+
+    attributes = stylesheet_links[0]
+    href = attributes.get("href", "")
+    integrity = attributes.get("integrity", "")
+    if not FINGERPRINTED_CSS_RE.fullmatch(href):
+        raise AssertionError(f"unexpected stylesheet href: {href!r}")
+    if not INTEGRITY_RE.fullmatch(integrity):
+        raise AssertionError(f"unexpected stylesheet integrity: {integrity!r}")
+    if attributes.get("crossorigin") != "anonymous":
+        raise AssertionError(f"missing anonymous CORS mode: {attributes!r}")
+    return href, integrity
 
 
 class SiteCssAssetContractTests(unittest.TestCase):
@@ -37,7 +57,8 @@ class SiteCssAssetContractTests(unittest.TestCase):
     def test_css_source_has_one_canonical_blockquote_rule(self) -> None:
         css = CSS_SOURCE.read_text(encoding="utf-8")
 
-        self.assertEqual(len(re.findall(r"\.prose blockquote\s*\{", css)), 1)
+        canonical_rules = re.findall(r"(?m)^\s*\.prose blockquote\s*\{", css)
+        self.assertEqual(len(canonical_rules), 1)
         self.assertNotRegex(css, r"HERMES_[A-Z0-9_]+_V\d+")
         self.assertIn("@media (prefers-reduced-motion: reduce)", css)
         self.assertIn("grid-template-columns:repeat(3,minmax(0,1fr))", css)
@@ -92,10 +113,7 @@ class SiteCssAssetContractTests(unittest.TestCase):
                 self.assertTrue(page.is_file(), f"missing representative page: {page}")
                 html = page.read_text(encoding="utf-8")
                 self.assertNotIn("<style", html)
-                match = STYLESHEET_RE.search(html)
-                self.assertIsNotNone(match, f"missing fingerprinted stylesheet in {page}")
-                assert match is not None
-                references.add((match.group("href"), match.group("integrity")))
+                references.add(stylesheet_reference(html))
 
             self.assertEqual(len(references), 1)
             href, _integrity = references.pop()
