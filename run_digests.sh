@@ -4,7 +4,12 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
-BASE="$HOME/hermes-tech"
+BASE="${HERMES_TECH_ROOT:-$HOME/hermes-tech}"
+[[ "$BASE" == /* ]] || {
+    echo "KĻŪDA: HERMES_TECH_ROOT jābūt absolūtam ceļam" >&2
+    exit 2
+}
+export HERMES_TECH_ROOT="$BASE"
 PYTHON="$BASE/venv/bin/python"
 ENV_FILE="$BASE/.env"
 LOCK="$BASE/.digest-pipeline.lock"
