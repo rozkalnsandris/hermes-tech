@@ -51,7 +51,7 @@ what was observed for that period and must identify itself as a snapshot.
 
 ## Public surfaces
 
-The consistency test covers:
+The executable checker is `tests/test_documentation_contract.py`. It covers:
 
 - `README.md`;
 - `site/content/how-hermes-works.md`;
