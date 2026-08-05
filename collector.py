@@ -34,6 +34,10 @@ except RuntimeConfigError as exc:
     raise SystemExit(EXIT_USAGE)
 
 _configure_core(PATHS)
+if hasattr(_core, "entry_published"):
+    from hermes_time import install_collector_time_contracts
+
+    install_collector_time_contracts(_core)
 _export_core_api()
 
 
