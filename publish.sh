@@ -6,7 +6,12 @@ IFS=$'\n\t'
 umask 077
 
 # HERMES_PUBLISH_SAFETY_V2
-BASE="$HOME/hermes-tech"
+BASE="${HERMES_TECH_ROOT:-$HOME/hermes-tech}"
+[[ "$BASE" == /* ]] || {
+    echo "KĻŪDA: HERMES_TECH_ROOT jābūt absolūtam ceļam" >&2
+    exit 2
+}
+export HERMES_TECH_ROOT="$BASE"
 DB="$BASE/data/hermes.db"
 SITE="$BASE/site"
 PUBLIC_DIR="$SITE/public"
