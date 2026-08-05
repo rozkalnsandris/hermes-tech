@@ -57,6 +57,21 @@ class RepositoryRef:
         return f"/repos/{owner}/{name}"
 
 
+@dataclass(frozen=True)
+class StatusCheckIdentity:
+    context: str
+    integration_id: int
+
+    def as_ruleset_entry(self) -> dict[str, Any]:
+        return {
+            "context": self.context,
+            "integration_id": self.integration_id,
+        }
+
+    def as_evidence(self) -> dict[str, Any]:
+        return self.as_ruleset_entry()
+
+
 class GitHubApi:
     def __init__(self, token: str, *, api_root: str = API_ROOT) -> None:
         token = token.strip()
@@ -151,9 +166,11 @@ def integrity_ruleset_payload() -> dict[str, Any]:
     }
 
 
-def code_gate_ruleset_payload(status_check: str) -> dict[str, Any]:
-    if not status_check.strip():
+def code_gate_ruleset_payload(status_check: StatusCheckIdentity) -> dict[str, Any]:
+    if not status_check.context.strip():
         raise PolicyError("status check context must not be empty")
+    if status_check.integration_id <= 0:
+        raise PolicyError("status check integration id must be a positive integer")
     return {
         "name": CODE_GATE_RULESET_NAME,
         "target": "branch",
@@ -187,7 +204,7 @@ def code_gate_ruleset_payload(status_check: str) -> dict[str, Any]:
                 "type": "required_status_checks",
                 "parameters": {
                     "do_not_enforce_on_create": False,
-                    "required_status_checks": [{"context": status_check}],
+                    "required_status_checks": [status_check.as_ruleset_entry()],
                     "strict_required_status_checks_policy": True,
                 },
             },
@@ -229,7 +246,7 @@ def require_successful_check(
     repository: RepositoryRef,
     expected_sha: str,
     status_check: str,
-) -> None:
+) -> StatusCheckIdentity:
     payload = api.request(
         "GET",
         f"{repository.api_prefix}/commits/{expected_sha}/check-runs?per_page=100",
@@ -240,10 +257,17 @@ def require_successful_check(
     matching = [
         run
         for run in runs
-        if isinstance(run, Mapping) and run.get("name") == status_check
+        if isinstance(run, Mapping)
+        and run.get("name") == status_check
+        and run.get("conclusion") == "success"
     ]
-    successful = [run for run in matching if run.get("conclusion") == "success"]
-    if not successful:
+    integration_ids = {
+        app.get("id")
+        for run in matching
+        for app in [run.get("app")]
+        if isinstance(app, Mapping) and isinstance(app.get("id"), int)
+    }
+    if not matching or not integration_ids:
         observed = sorted(
             {
                 f"{run.get('name')}={run.get('conclusion')}"
@@ -252,9 +276,16 @@ def require_successful_check(
             }
         )
         raise PolicyError(
-            f"required successful check {status_check!r} is absent on {expected_sha}; "
-            f"observed={observed}"
+            f"required successful check {status_check!r} with an app integration is absent "
+            f"on {expected_sha}; observed={observed}"
         )
+    if len(integration_ids) != 1:
+        raise PolicyError(
+            f"successful check {status_check!r} is produced by multiple app integrations: "
+            f"{sorted(integration_ids)}"
+        )
+    integration_id = next(iter(integration_ids))
+    return StatusCheckIdentity(status_check, integration_id)
 
 
 def require_single_write_deploy_key(
@@ -409,7 +440,7 @@ def _require_subset(actual: Any, expected: Any, path: str = "payload") -> None:
 def verify_managed_rulesets(
     api: GitHubApi,
     repository: RepositoryRef,
-    status_check: str,
+    status_check: StatusCheckIdentity,
 ) -> dict[str, int]:
     summaries = list_repository_rulesets(api, repository)
     result: dict[str, int] = {}
@@ -460,7 +491,7 @@ def preflight(
         raise PolicyError("GitHub repository response is not an object")
     require_repository_state(repo_payload, repository)
     require_exact_main_sha(api, repository, expected_sha)
-    require_successful_check(api, repository, expected_sha, status_check)
+    status_identity = require_successful_check(api, repository, expected_sha, status_check)
     deploy_key = require_single_write_deploy_key(api, repository, deploy_key_title)
     require_no_classic_branch_protection(api, repository)
     summaries = list_repository_rulesets(api, repository)
@@ -468,7 +499,7 @@ def preflight(
     return {
         "repository": repository.full_name,
         "main_sha": expected_sha,
-        "status_check": status_check,
+        "status_check": status_identity.as_evidence(),
         "write_deploy_key": {
             "id": deploy_key["id"],
             "title": deploy_key["title"],
@@ -495,6 +526,14 @@ def apply_policy(
             f"confirmation mismatch; required exact value: {expected_confirmation!r}"
         )
     evidence = preflight(api, repository, expected_sha, deploy_key_title, status_check)
+    status_evidence = evidence.get("status_check")
+    if not isinstance(status_evidence, Mapping):
+        raise PolicyError("internal error: preflight status check evidence is missing")
+    context = status_evidence.get("context")
+    integration_id = status_evidence.get("integration_id")
+    if not isinstance(context, str) or not isinstance(integration_id, int):
+        raise PolicyError("internal error: preflight status check identity is invalid")
+    status_identity = StatusCheckIdentity(context, integration_id)
     summaries = list_repository_rulesets(api, repository)
     integrity_id = upsert_ruleset(api, repository, summaries, integrity_ruleset_payload())
     summaries = list_repository_rulesets(api, repository)
@@ -502,7 +541,7 @@ def apply_policy(
         api,
         repository,
         summaries,
-        code_gate_ruleset_payload(status_check),
+        code_gate_ruleset_payload(status_identity),
     )
     api.request("PATCH", repository.api_prefix, repository_settings_payload())
     verified = verify_policy(
@@ -536,15 +575,15 @@ def verify_policy(
     require_repository_state(repo_payload, repository)
     verify_repository_settings(repo_payload)
     require_exact_main_sha(api, repository, expected_sha)
-    require_successful_check(api, repository, expected_sha, status_check)
+    status_identity = require_successful_check(api, repository, expected_sha, status_check)
     deploy_key = require_single_write_deploy_key(api, repository, deploy_key_title)
     if require_no_classic:
         require_no_classic_branch_protection(api, repository)
-    ruleset_ids = verify_managed_rulesets(api, repository, status_check)
+    ruleset_ids = verify_managed_rulesets(api, repository, status_identity)
     return {
         "repository": repository.full_name,
         "main_sha": expected_sha,
-        "status_check": status_check,
+        "status_check": status_identity.as_evidence(),
         "write_deploy_key": {
             "id": deploy_key["id"],
             "title": deploy_key["title"],
