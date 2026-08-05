@@ -74,6 +74,10 @@ except RuntimeConfigError as exc:
     raise SystemExit(EXIT_USAGE)
 
 _configure_core(PATHS)
+if hasattr(_core, "write_routing_manifest"):
+    from hermes_time import install_digest_time_contracts
+
+    install_digest_time_contracts(_core)
 _install_diversity_contracts()
 _export_core_api()
 
