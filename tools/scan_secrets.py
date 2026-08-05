@@ -32,9 +32,13 @@ RULES = (
 )
 
 ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|bot[_-]?token|"
+    r"(?i)(?P<key_quote>[\"']?)\b"
+    r"(?:api[_-]?key|access[_-]?token|auth[_-]?token|bot[_-]?token|"
     r"client[_-]?secret|password|passwd|private[_-]?key|secret)\b"
-    r"\s*[:=]\s*[\"']?(?P<value>[^\s\"'#]{12,})"
+    r"(?P=key_quote)\s*[:=]\s*(?:"
+    r"(?P<quote>[\"'])(?P<quoted>[A-Za-z0-9_./+=:@-]{12,})(?P=quote)"
+    r"|(?P<bare>[A-Za-z0-9_./+=:@-]{12,})(?=\s*(?:$|[#;,]))"
+    r")"
 )
 
 
@@ -59,8 +63,10 @@ def scan_text(path: str, text: str) -> list[Finding]:
             if pattern.search(line):
                 findings.append(Finding(path, number, rule))
         assignment = ASSIGNMENT_RE.search(line)
-        if assignment and not is_placeholder(assignment.group("value")):
-            findings.append(Finding(path, number, "credential-assignment"))
+        if assignment:
+            value = assignment.group("quoted") or assignment.group("bare")
+            if not is_placeholder(value):
+                findings.append(Finding(path, number, "credential-assignment"))
     return findings
 
 
@@ -98,8 +104,11 @@ def self_test() -> None:
     rendered = "\n".join(item.render() for item in findings)
     if fake in rendered:
         raise RuntimeError("self-test leaked the synthetic token")
-    if scan_text("example.env", "API_KEY=replace-me\n"):
+    placeholder_line = "API" + "_KEY=" + "replace-me"
+    if scan_text("example.env", placeholder_line + "\n"):
         raise RuntimeError("self-test rejected an allowed placeholder")
+    if scan_text("source.py", "api_key = _load_api_key(step)\n"):
+        raise RuntimeError("self-test rejected a non-literal Python assignment")
 
 
 def main(argv: list[str] | None = None) -> int:
