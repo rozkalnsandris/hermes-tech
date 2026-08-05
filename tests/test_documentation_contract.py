@@ -70,7 +70,7 @@ class DocumentationContractTests(unittest.TestCase):
             'export HERMES_TECH_ROOT="$PWD"',
             "bash tools/ci.sh",
             "does not fetch every linked article page",
-            "does not mean every automatically passing digest receives manual approval",
+            "does **not** mean every automatically passing digest receives manual approval",
         )
         for marker in required:
             self.assertIn(marker, text)
