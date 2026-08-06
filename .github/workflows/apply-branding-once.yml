@@ -1,16 +1,20 @@
 name: Apply Hermes Tech branding once
 
 on:
-  push:
+  pull_request:
     branches:
-      - chore/branding-tech-30
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: ${{ !contains(github.event.head_commit.message, '[branding-applied]') }}
+    if: ${{ github.event.pull_request.head.ref == 'chore/branding-tech-30' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
