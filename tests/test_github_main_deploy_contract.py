@@ -100,8 +100,10 @@ class GitHubMainDeployContractTests(unittest.TestCase):
 
         for forbidden_state in (
             ".credentials",
+            ".credentials_migrated",
             ".credentials_rsaparams",
             ".runner",
+            ".runner_migrated",
             ".service",
             ".env",
             "_diag",
@@ -109,6 +111,9 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         ):
             self.assertIn(f'"$TMP_COPY/{forbidden_state}"', runner)
 
+        self.assertIn(".runner_migrated as configured state", runner)
+        self.assertIn("--exclude='./.runner_migrated'", runner)
+        self.assertIn("--exclude='./.credentials_migrated'", runner)
         self.assertIn('cd "$RUNNER_DIR"', runner)
         self.assertIn("./config.sh", runner)
         self.assertNotIn('"$RUNNER_DIR/config.sh"', runner)
