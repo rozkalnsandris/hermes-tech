@@ -97,6 +97,22 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn('mv -- "$TMP_COPY" "$RUNNER_DIR"', runner)
         self.assertNotIn("/tmp/hermes-tech-runner-copy", runner)
         self.assertNotIn('find "$TMP_COPY" -mindepth 1', runner)
+
+        for forbidden_state in (
+            ".credentials",
+            ".credentials_rsaparams",
+            ".runner",
+            ".service",
+            ".env",
+            "_diag",
+            "_work",
+        ):
+            self.assertIn(f'"$TMP_COPY/{forbidden_state}"', runner)
+
+        self.assertIn('cd "$RUNNER_DIR"', runner)
+        self.assertIn("./config.sh", runner)
+        self.assertNotIn('"$RUNNER_DIR/config.sh"', runner)
+        self.assertIn("copied runner retained forbidden state", runner)
         self.assertIn(
             "github-tech-runner ALL=(root) NOPASSWD: "
             "/usr/local/sbin/hermes-tech-deploy-main *",
