@@ -80,8 +80,10 @@ trap cleanup EXIT
 
 tar \
     --exclude='./.credentials' \
+    --exclude='./.credentials_migrated' \
     --exclude='./.credentials_rsaparams' \
     --exclude='./.runner' \
+    --exclude='./.runner_migrated' \
     --exclude='./.service' \
     --exclude='./.env' \
     --exclude='./_diag' \
@@ -90,17 +92,22 @@ tar \
     | tar -C "$TMP_COPY" -xf -
 
 # Defense in depth: copied runner binaries must never inherit registration,
-# credentials, service state, diagnostics, or work files from the source runner.
+# migrated registration, credentials, service state, diagnostics, or work files
+# from the source runner. GitHub Runner treats both .runner and
+# .runner_migrated as configured state.
 rm -rf -- \
     "$TMP_COPY/.credentials" \
+    "$TMP_COPY/.credentials_migrated" \
     "$TMP_COPY/.credentials_rsaparams" \
     "$TMP_COPY/.runner" \
+    "$TMP_COPY/.runner_migrated" \
     "$TMP_COPY/.service" \
     "$TMP_COPY/.env" \
     "$TMP_COPY/_diag" \
     "$TMP_COPY/_work"
 for forbidden_state in \
-    .credentials .credentials_rsaparams .runner .service .env _diag _work; do
+    .credentials .credentials_migrated .credentials_rsaparams \
+    .runner .runner_migrated .service .env _diag _work; do
     [[ ! -e "$TMP_COPY/$forbidden_state" ]] \
         || fail "copied runner retained forbidden state: $forbidden_state"
 done
