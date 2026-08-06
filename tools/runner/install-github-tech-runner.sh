@@ -23,12 +23,13 @@ RUNNER_NAME='rpi5-hermes-tech-release'
 RUNNER_LABEL='hermes-tech-release'
 SERVICE='actions.runner.rozkalnsandris-hermes-tech.rpi5-hermes-tech-release.service'
 
-for command_name in chown chmod find grep id install mktemp mv python3 rm runuser systemctl tar tr useradd; do
+for command_name in chown chmod grep id install mktemp mv python3 rm runuser systemctl tar tr useradd; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
 
-if id "$RUNNER_USER" >/dev/null 2>&1 && [[ -f "$RUNNER_DIR/.runner" ]]; then
-    systemctl is-active --quiet "$SERVICE" || fail 'existing Hermes Tech runner service is not active'
+if id "$RUNNER_USER" >/dev/null 2>&1 \
+    && [[ -f "$RUNNER_DIR/.runner" ]] \
+    && systemctl is-active --quiet "$SERVICE"; then
     if id -nG "$RUNNER_USER" | tr ' ' '\n' | grep -Fxq docker; then
         fail 'Hermes Tech runner must not belong to docker group'
     fi
@@ -82,27 +83,50 @@ tar \
     --exclude='./.credentials_rsaparams' \
     --exclude='./.runner' \
     --exclude='./.service' \
+    --exclude='./.env' \
     --exclude='./_diag' \
     --exclude='./_work' \
     -C "$SOURCE_RUNNER" -cf - . \
     | tar -C "$TMP_COPY" -xf -
+
+# Defense in depth: copied runner binaries must never inherit registration,
+# credentials, service state, diagnostics, or work files from the source runner.
+rm -rf -- \
+    "$TMP_COPY/.credentials" \
+    "$TMP_COPY/.credentials_rsaparams" \
+    "$TMP_COPY/.runner" \
+    "$TMP_COPY/.service" \
+    "$TMP_COPY/.env" \
+    "$TMP_COPY/_diag" \
+    "$TMP_COPY/_work"
+for forbidden_state in \
+    .credentials .credentials_rsaparams .runner .service .env _diag _work; do
+    [[ ! -e "$TMP_COPY/$forbidden_state" ]] \
+        || fail "copied runner retained forbidden state: $forbidden_state"
+done
 
 chown -R "$RUNNER_USER:$RUNNER_USER" "$TMP_COPY"
 chmod 0750 "$TMP_COPY"
 mv -- "$TMP_COPY" "$RUNNER_DIR"
 TMP_COPY=''
 
-runuser -u "$RUNNER_USER" -- env \
-    HOME="$RUNNER_HOME" \
-    PATH='/usr/local/bin:/usr/bin:/bin' \
-    "$RUNNER_DIR/config.sh" \
-    --unattended \
-    --replace \
-    --url "$REPOSITORY_URL" \
-    --token "$RUNNER_TOKEN" \
-    --name "$RUNNER_NAME" \
-    --labels "$RUNNER_LABEL" \
-    --work _work
+# GitHub's config and service scripts are designed to run from the extracted
+# runner directory. Running them from another cwd can resolve ./bin and state
+# files against the wrong location.
+(
+    cd "$RUNNER_DIR"
+    runuser -u "$RUNNER_USER" -- env \
+        HOME="$RUNNER_HOME" \
+        PATH='/usr/local/bin:/usr/bin:/bin' \
+        ./config.sh \
+        --unattended \
+        --replace \
+        --url "$REPOSITORY_URL" \
+        --token "$RUNNER_TOKEN" \
+        --name "$RUNNER_NAME" \
+        --labels "$RUNNER_LABEL" \
+        --work _work
+)
 
 (
     cd "$RUNNER_DIR"
