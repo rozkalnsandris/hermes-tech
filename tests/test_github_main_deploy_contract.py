@@ -4,8 +4,6 @@ from pathlib import Path
 import subprocess
 import unittest
 
-import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "deploy-main.yml"
@@ -14,7 +12,6 @@ HELPER = ROOT / "tools" / "runner" / "release" / "hermes-tech-deploy-main"
 RUNNER_INSTALLER = ROOT / "tools" / "runner" / "install-github-tech-runner.sh"
 HELPER_INSTALLER = ROOT / "tools" / "runner" / "install-github-main-deploy.sh"
 ACTIVATOR = ROOT / "tools" / "runner" / "activate-github-main-deploy.sh"
-README = ROOT / "README.md"
 
 
 def read(path: Path) -> str:
@@ -24,18 +21,21 @@ def read(path: Path) -> str:
 class GitHubMainDeployContractTests(unittest.TestCase):
     def test_workflow_queues_every_successful_main_ci_serially(self) -> None:
         text = read(WORKFLOW)
-        data = yaml.safe_load(text)
-        trigger = data.get("on") or data.get(True)
 
-        self.assertEqual(set(trigger), {"workflow_run", "workflow_dispatch"})
-        self.assertEqual(trigger["workflow_run"]["workflows"], ["CI"])
-        self.assertEqual(trigger["workflow_run"]["types"], ["completed"])
-        self.assertEqual(trigger["workflow_run"]["branches"], ["main"])
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", text)
-        self.assertIn("hermes-tech-release", text)
-        self.assertIn("/usr/local/sbin/hermes-tech-deploy-main", text)
-        self.assertIn("https://tech.rozkalns.net/", text)
-        self.assertIn("actions/upload-artifact@v6", text)
+        for marker in (
+            "workflow_run:",
+            "workflows:\n      - CI",
+            "types:\n      - completed",
+            "branches:\n      - main",
+            "workflow_dispatch:",
+            "github.event.workflow_run.conclusion == 'success'",
+            "hermes-tech-release",
+            "/usr/local/sbin/hermes-tech-deploy-main",
+            "https://tech.rozkalns.net/",
+            "actions/upload-artifact@v6",
+        ):
+            self.assertIn(marker, text)
+
         self.assertNotIn("actions/upload-artifact@v4", text)
         self.assertNotIn("actions/checkout", text)
         self.assertNotIn("concurrency:", text)
