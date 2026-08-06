@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 077
+PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+
+fail() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'deploy helper must run as root through sudo'
+[[ $# -eq 2 ]] || fail 'usage: hermes-tech-deploy-main <40-sha> <evidence-dir>'
+
+TARGET_SHA=$1
+EVIDENCE_DIR=$(readlink -f -- "$2")
+[[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'target SHA must be 40 lowercase hex characters'
+[[ "$EVIDENCE_DIR" =~ ^/home/github-tech-runner/actions-runner/_work/_temp/hermes-tech-main-deploy-[0-9]+-[0-9]+$ ]] \
+    || fail 'evidence directory is outside the runner temp allowlist'
+[[ -d "$EVIDENCE_DIR" && ! -L "$EVIDENCE_DIR" ]] || fail 'evidence directory is missing or unsafe'
+[[ "$(stat -c '%U:%G' "$EVIDENCE_DIR")" == 'github-tech-runner:github-tech-runner' ]] \
+    || fail 'evidence directory ownership is invalid'
+[[ "$(stat -c '%a' "$EVIDENCE_DIR")" == '700' ]] || fail 'evidence directory permissions must be 0700'
+
+LOG_FILE="$EVIDENCE_DIR/deploy.log"
+touch "$LOG_FILE"
+chmod 0600 "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+PRIMARY='/home/andris/hermes-tech'
+SOURCE='/home/andris/hermes-tech-worktrees/release-control'
+OWNER='andris'
+OWNER_HOME='/home/andris'
+PUBLISH_LOCK="$PRIMARY/.publish.lock"
+PUBLIC_URL='https://tech.rozkalns.net/'
+
+WORK=''
+finish() {
+    local rc=$?
+    if [[ -n "$WORK" && -d "$WORK" ]]; then
+        rm -rf -- "$WORK" || true
+    fi
+    chown -R github-tech-runner:github-tech-runner "$EVIDENCE_DIR" || true
+    trap - EXIT
+    exit "$rc"
+}
+trap finish EXIT
+
+for command_name in chmod chown curl find flock git hugo id mkdir mktemp readlink rm rsync runuser sha256sum stat tee; do
+    command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
+done
+
+[[ -d "$PRIMARY" && ! -L "$PRIMARY" ]] || fail 'production root is missing or unsafe'
+[[ -d "$PRIMARY/.git" || -f "$PRIMARY/.git" ]] || fail 'production root is not a Git worktree'
+[[ -d "$SOURCE" && ! -L "$SOURCE" ]] || fail 'release-control worktree is missing or unsafe'
+[[ -d "$SOURCE/.git" || -f "$SOURCE/.git" ]] || fail 'release-control is not a Git worktree'
+[[ -d "$PRIMARY/site/public" && ! -L "$PRIMARY/site/public" ]] \
+    || fail 'production public directory is missing or unsafe'
+
+owner_git() {
+    local root=$1
+    shift
+    runuser -u "$OWNER" -- env \
+        HOME="$OWNER_HOME" \
+        PATH='/home/andris/.local/bin:/usr/local/bin:/usr/bin:/bin' \
+        git -C "$root" "$@"
+}
+
+runuser -u "$OWNER" -- touch "$PUBLISH_LOCK"
+[[ "$(stat -c '%U' "$PUBLISH_LOCK")" == "$OWNER" ]] || fail 'publish lock ownership is invalid'
+exec 9>"$PUBLISH_LOCK"
+flock 9
+
+printf 'CHECK: synchronizing origin/main for queued SHA\n'
+owner_git "$SOURCE" fetch --prune origin main
+REMOTE_SHA=$(owner_git "$SOURCE" rev-parse refs/remotes/origin/main)
+owner_git "$SOURCE" cat-file -e "${TARGET_SHA}^{commit}" \
+    || fail 'queued SHA is not available as a Git commit'
+owner_git "$SOURCE" merge-base --is-ancestor "$TARGET_SHA" refs/remotes/origin/main \
+    || fail 'queued SHA is not an ancestor of current origin/main'
+[[ -z "$(owner_git "$SOURCE" branch --show-current)" ]] \
+    || fail 'release-control worktree must remain detached'
+[[ -z "$(owner_git "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] \
+    || fail 'release-control worktree is not clean'
+owner_git "$SOURCE" checkout --detach "$TARGET_SHA"
+[[ "$(owner_git "$SOURCE" rev-parse HEAD)" == "$TARGET_SHA" ]] \
+    || fail 'release-control HEAD mismatch'
+[[ -z "$(owner_git "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] \
+    || fail 'release-control worktree became dirty'
+
+owner_git "$PRIMARY" fetch --prune origin main
+[[ "$(owner_git "$PRIMARY" branch --show-current)" == 'main' ]] \
+    || fail 'production checkout must remain on main'
+[[ -z "$(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)" ]] \
+    || fail 'production checkout is not clean'
+OLD_SHA=$(owner_git "$PRIMARY" rev-parse HEAD)
+owner_git "$SOURCE" cat-file -e "${OLD_SHA}^{commit}" \
+    || fail 'current production SHA is not available in source history'
+
+curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
+    >"$EVIDENCE_DIR/pre-site.html"
+
+if [[ "$OLD_SHA" == "$TARGET_SHA" ]]; then
+    printf 'DEPLOY_RESULT=NO_OP_ALREADY_CURRENT\n'
+    printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+    printf 'PRODUCTION_SHA=%s\n' "$OLD_SHA"
+    printf 'PUBLIC_SITE=PASS\n'
+    printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+    printf 'DEPENDENCIES_CHANGED=false\n'
+    printf 'ROLLBACK_PERFORMED=false\n'
+    exit 0
+fi
+
+if owner_git "$SOURCE" merge-base --is-ancestor "$TARGET_SHA" "$OLD_SHA"; then
+    printf 'DEPLOY_RESULT=NO_OP_STALE\n'
+    printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+    printf 'PRODUCTION_SHA=%s\n' "$OLD_SHA"
+    printf 'PUBLIC_SITE=PASS\n'
+    printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+    printf 'DEPENDENCIES_CHANGED=false\n'
+    printf 'ROLLBACK_PERFORMED=false\n'
+    exit 0
+fi
+
+owner_git "$SOURCE" merge-base --is-ancestor "$OLD_SHA" "$TARGET_SHA" \
+    || fail 'current production SHA is not an ancestor of queued target SHA'
+
+mapfile -t changed_paths < <(owner_git "$SOURCE" diff --name-only "$OLD_SHA..$TARGET_SHA")
+for changed_path in "${changed_paths[@]}"; do
+    case "$changed_path" in
+        .python-version|requirements-bootstrap.txt|requirements.txt|requirements-dev.txt|hermes_db.py|tools/sqlite_schema.py)
+            fail "automatic deploy blocked by dependency or database-sensitive change: $changed_path"
+            ;;
+    esac
+done
+
+WORK=$(mktemp -d /tmp/hermes-tech-deploy.XXXXXXXX)
+BUILD_DIR="$WORK/build"
+PUBLIC_BACKUP="$WORK/public-backup"
+OWNER_GROUP=$(id -gn "$OWNER")
+mkdir -p "$BUILD_DIR" "$PUBLIC_BACKUP" "$WORK/hugo-cache"
+chown -R "$OWNER:$OWNER_GROUP" "$WORK"
+
+printf 'BUILD: Hugo site for %s\n' "$TARGET_SHA"
+runuser -u "$OWNER" -- env \
+    HOME="$OWNER_HOME" \
+    HUGO_CACHEDIR="$WORK/hugo-cache" \
+    PATH='/home/andris/.local/bin:/usr/local/bin:/usr/bin:/bin' \
+    hugo --source "$SOURCE/site" \
+    --destination "$BUILD_DIR" \
+    --cleanDestinationDir \
+    --minify \
+    --noBuildLock
+[[ -s "$BUILD_DIR/index.html" ]] || fail 'Hugo build has no index.html'
+find "$BUILD_DIR" -type d -exec chmod 755 {} +
+find "$BUILD_DIR" -type f -exec chmod 644 {} +
+rsync -a "$PRIMARY/site/public/" "$PUBLIC_BACKUP/"
+
+printf 'DEPLOY: fast-forwarding production checkout\n'
+APPLY_RC=0
+set +e
+owner_git "$PRIMARY" merge --ff-only "$TARGET_SHA" \
+    >"$EVIDENCE_DIR/git-apply.log" 2>&1
+APPLY_RC=$?
+if [[ $APPLY_RC -eq 0 ]]; then
+    rsync -a --delete "$BUILD_DIR/" "$PRIMARY/site/public/" \
+        >"$EVIDENCE_DIR/rsync-apply.log" 2>&1
+    APPLY_RC=$?
+fi
+if [[ $APPLY_RC -eq 0 ]]; then
+    chown -R "$OWNER:$OWNER_GROUP" "$PRIMARY/site/public"
+    chmod 755 "$PRIMARY/site/public"
+    find "$PRIMARY/site/public" -type d -exec chmod 755 {} +
+    find "$PRIMARY/site/public" -type f -exec chmod 644 {} +
+    [[ "$(owner_git "$PRIMARY" rev-parse HEAD)" == "$TARGET_SHA" ]]
+    APPLY_RC=$?
+fi
+if [[ $APPLY_RC -eq 0 ]]; then
+    [[ -z "$(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)" ]]
+    APPLY_RC=$?
+fi
+if [[ $APPLY_RC -eq 0 ]]; then
+    curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
+        >"$EVIDENCE_DIR/post-site.html"
+    APPLY_RC=$?
+fi
+set -e
+
+if [[ $APPLY_RC -ne 0 ]]; then
+    printf 'DEPLOY FAILED: rolling back to %s\n' "$OLD_SHA"
+    ROLLBACK_RC=0
+    set +e
+    rsync -a --delete "$PUBLIC_BACKUP/" "$PRIMARY/site/public/" \
+        >"$EVIDENCE_DIR/rsync-rollback.log" 2>&1
+    ROLLBACK_RC=$?
+    if [[ $ROLLBACK_RC -eq 0 ]]; then
+        chown -R "$OWNER:$OWNER_GROUP" "$PRIMARY/site/public"
+        owner_git "$PRIMARY" reset --hard "$OLD_SHA" \
+            >"$EVIDENCE_DIR/git-rollback.log" 2>&1
+        ROLLBACK_RC=$?
+    fi
+    if [[ $ROLLBACK_RC -eq 0 ]]; then
+        curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
+            >"$EVIDENCE_DIR/rollback-site.html"
+        ROLLBACK_RC=$?
+    fi
+    set -e
+    if [[ $ROLLBACK_RC -eq 0 ]]; then
+        printf 'DEPLOY_RESULT=FAIL_ROLLBACK_PASS\n'
+        printf 'ROLLBACK_PERFORMED=true\n'
+        printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+        exit 1
+    fi
+    printf 'DEPLOY_RESULT=FAIL_ROLLBACK_FAIL\n'
+    printf 'ROLLBACK_PERFORMED=true\n'
+    printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+    exit 2
+fi
+
+printf 'DEPLOY_RESULT=PASS\n'
+printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+printf 'PRODUCTION_SHA=%s\n' "$(owner_git "$PRIMARY" rev-parse HEAD)"
+printf 'CURRENT_MAIN_SHA=%s\n' "$REMOTE_SHA"
+printf 'PUBLIC_SITE=PASS\n'
+printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+printf 'DEPENDENCIES_CHANGED=false\n'
+printf 'ROLLBACK_PERFORMED=false\n'
