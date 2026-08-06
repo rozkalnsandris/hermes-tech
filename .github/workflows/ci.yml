@@ -57,3 +57,39 @@ jobs:
         env:
           HERMES_TECH_ROOT: ${{ github.workspace }}
         run: bash tools/ci.sh
+
+  apply_branding_once:
+    name: apply branding once
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'chore/branding-tech-30' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout branding branch
+        uses: actions/checkout@v5
+        with:
+          ref: chore/branding-tech-30
+          fetch-depth: 0
+      - name: Apply and commit branding
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          readme = Path('README.md')
+          text = readme.read_text(encoding='utf-8')
+          block = '''<p align="center">
+            <img src="assets/branding/project-logo.svg" alt="Hermes Tech logo" width="160">
+          </p>
+
+          '''
+          if 'assets/branding/project-logo.svg' not in text:
+              readme.write_text(block + text, encoding='utf-8')
+          Path('.github/workflows/apply-branding-once.yml').unlink(missing_ok=True)
+          PY
+          git checkout origin/main -- .github/workflows/ci.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "docs: add Hermes Tech project branding (#30) [branding-applied]"
+          git push origin HEAD:chore/branding-tech-30
