@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/branding/project-logo.svg" alt="Hermes Tech logo" width="160">
+</p>
+
 # Hermes Tech
 
 Hermes Tech is a self-hosted, openly AI-generated technology digest covering
