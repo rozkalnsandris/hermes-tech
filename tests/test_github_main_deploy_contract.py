@@ -90,6 +90,14 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn('--labels "$RUNNER_LABEL"', runner)
         self.assertIn("RUNNER_HAS_DOCKER_GROUP=false", runner)
         self.assertIn(
+            'mktemp -d "$RUNNER_HOME/.actions-runner-stage.XXXXXXXX"',
+            runner,
+        )
+        self.assertIn('rm -rf -- "$RUNNER_DIR"', runner)
+        self.assertIn('mv -- "$TMP_COPY" "$RUNNER_DIR"', runner)
+        self.assertNotIn("/tmp/hermes-tech-runner-copy", runner)
+        self.assertNotIn('find "$TMP_COPY" -mindepth 1', runner)
+        self.assertIn(
             "github-tech-runner ALL=(root) NOPASSWD: "
             "/usr/local/sbin/hermes-tech-deploy-main *",
             helper_installer,
