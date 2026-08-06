@@ -1,0 +1,9 @@
+# Fully pinned Python 3.11 runtime environment.
+certifi==2026.7.22
+charset-normalizer==3.4.9
+feedparser==6.0.12
+idna==3.18
+Pillow==12.3.0
+requests==2.34.2
+sgmllib3k==1.0.0
+urllib3==2.7.0

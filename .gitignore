@@ -1,19 +1,44 @@
+# Local Python/runtime state
 venv/
 data/
 logs/
 .env
 __pycache__/
 *.py[cod]
-.deploy.lock
-.publish.lock
-backups/
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Runtime locks and temporary work directories
+/.deploy.lock
+/.publish.lock
+/.publish-work.*
+/.collector.lock
+/.digest-pipeline.lock
+/.routing-repair-*.lock
+
+# Local backups, evidence, and transport bundles
+/.local-backups/
+/backups/
 digest.py.backup-*
 publish.sh.backup-*
-.collector.lock
-.digest-pipeline.lock
+/evidence/
+/*.evidence.json
+/*-evidence-*.json
+/*-evidence-*.tar.gz
+/*.tar.gz.sha256
+/*.bundle
+/*.bundle.*
+*.tmp
+*.swp
+*~
 
-# Generated Hugo output
+# Generated Hugo state and output
 /site/public/
-
-# Transient routing-repair locks
-/.routing-repair-*.lock
+/site/.hugo_build.lock
+/site/resources/
+/site/.hugo_cache/
+/.hugo_cache/

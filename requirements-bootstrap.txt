@@ -1,0 +1,3 @@
+# Packaging tools are pinned before installing the application lock.
+pip==26.1.2
+setuptools==83.0.0

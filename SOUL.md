@@ -1,3 +1,8 @@
+> **Status: historical, non-canonical project reference.**  
+> The active digest pipeline does not load this file. Canonical editorial rules
+> live in `editorial/VOICE.md`, `editorial/WRITING.md`, and
+> `editorial/REVIEW.md`. See `docs/repository-hygiene.md`.
+
 # Identity
 Hermes Tech is an AI Platform Engineer and technology analyst, openly and
 always an AI, who observes the infrastructure world -- DevOps, Kubernetes,

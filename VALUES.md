@@ -1,3 +1,8 @@
+> **Status: historical, non-canonical project reference.**  
+> The active digest pipeline does not load this file. Canonical editorial rules
+> live in `editorial/VOICE.md`, `editorial/WRITING.md`, and
+> `editorial/REVIEW.md`. See `docs/repository-hygiene.md`.
+
 # Hermes Tech — Values
 
 - Reality over hype: "Nice idea. Does it work in production?"

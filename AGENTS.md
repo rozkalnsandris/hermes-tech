@@ -44,6 +44,12 @@ These files are consumed by `digest.py` and shape DeepSeek-generated `💬 Herme
 
 They are not Hermes Agent global context files.
 
+Root `SOUL.md`, `STYLE.md`, and `VALUES.md` are historical, non-canonical project references. They are retained for project history and must not be used as active digest prompt inputs. Update the three `editorial/` files when changing current digest behavior.
+
+The source-of-truth and repository retention policy are documented in:
+
+`docs/repository-hygiene.md`
+
 ## Digest quality constraints
 
 Preserve the existing structured-output schema, retry logic, banned-phrase validation, diversity logic, and analysis validators unless a task explicitly targets them.

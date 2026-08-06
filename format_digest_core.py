@@ -112,7 +112,12 @@ def process_block(*args, **kwargs):
     # Returning it untouched prevents HEAD_RE from reconstructing it as a
     # heading, which is what produced the visible empty ** ** artifact.
     if args and isinstance(args[0], str) and args[0].lstrip().startswith(">"):
-        return args[0].strip().replace("** **", "")
+        rendered = args[0].strip()
+        # Remove only a standalone empty-emphasis token. A plain
+        # .replace("** **", "") can consume the closing ** from
+        # "**Hermes:**" when the tokens touch, corrupting the label.
+        rendered = re.sub(r"(?<=\s)\*\*\s+\*\*(?=\S)", "", rendered)
+        return rendered.replace("** **", "")
 
     call_args = list(args)
     if call_args and isinstance(call_args[0], str):
