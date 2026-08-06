@@ -23,7 +23,7 @@ RUNNER_NAME='rpi5-hermes-tech-release'
 RUNNER_LABEL='hermes-tech-release'
 SERVICE='actions.runner.rozkalnsandris-hermes-tech.rpi5-hermes-tech-release.service'
 
-for command_name in chown cp find grep id install mktemp python3 rm runuser systemctl tar tr useradd; do
+for command_name in chown chmod find grep id install mktemp mv python3 rm runuser systemctl tar tr useradd; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
 
@@ -36,6 +36,10 @@ if id "$RUNNER_USER" >/dev/null 2>&1 && [[ -f "$RUNNER_DIR/.runner" ]]; then
     printf 'RUNNER_SERVICE=%s\n' "$SERVICE"
     printf 'RUNNER_HAS_DOCKER_GROUP=false\n'
     exit 0
+fi
+
+if systemctl is-active --quiet "$SERVICE"; then
+    fail 'Hermes Tech runner service is active without a valid runner registration'
 fi
 
 [[ -d "$SOURCE_RUNNER" && -x "$SOURCE_RUNNER/config.sh" ]] \
@@ -59,10 +63,17 @@ if ! id "$RUNNER_USER" >/dev/null 2>&1; then
         "$RUNNER_USER"
 fi
 
-install -d -o "$RUNNER_USER" -g "$RUNNER_USER" -m 0750 "$RUNNER_DIR"
-TMP_COPY=$(mktemp -d /tmp/hermes-tech-runner-copy.XXXXXXXX)
+install -d -o "$RUNNER_USER" -g "$RUNNER_USER" -m 0750 "$RUNNER_HOME"
+[[ ! -L "$RUNNER_DIR" ]] || fail 'runner directory must not be a symlink'
+rm -rf -- "$RUNNER_DIR"
+
+# Keep staging on the runner home filesystem. /tmp may be a small tmpfs and is
+# not suitable for unpacking a complete GitHub Actions runner distribution.
+TMP_COPY=$(mktemp -d "$RUNNER_HOME/.actions-runner-stage.XXXXXXXX")
 cleanup() {
-    rm -rf -- "$TMP_COPY"
+    if [[ -n "${TMP_COPY:-}" ]]; then
+        rm -rf -- "$TMP_COPY"
+    fi
 }
 trap cleanup EXIT
 
@@ -76,8 +87,10 @@ tar \
     -C "$SOURCE_RUNNER" -cf - . \
     | tar -C "$TMP_COPY" -xf -
 
-find "$TMP_COPY" -mindepth 1 -maxdepth 1 -exec cp -a -- {} "$RUNNER_DIR/" \;
-chown -R "$RUNNER_USER:$RUNNER_USER" "$RUNNER_DIR"
+chown -R "$RUNNER_USER:$RUNNER_USER" "$TMP_COPY"
+chmod 0750 "$TMP_COPY"
+mv -- "$TMP_COPY" "$RUNNER_DIR"
+TMP_COPY=''
 
 runuser -u "$RUNNER_USER" -- env \
     HOME="$RUNNER_HOME" \
