@@ -87,13 +87,13 @@ jobs:
               ).get("workflow_runs", [])
               successful = [
                   row for row in runs
-                  if row.get("event") == "push"
+                  if row.get("event") in {"push", "workflow_dispatch"}
                   and row.get("head_branch") == "main"
                   and row.get("head_sha") == sha
                   and row.get("conclusion") == "success"
               ]
               if not successful:
-                  raise SystemExit("current main has no successful push CI run")
+                  raise SystemExit("current main has no successful exact-SHA CI run")
               ci_run_id = max(int(row["id"]) for row in successful)
 
           if not re.fullmatch(r"[0-9a-f]{40}", sha) or ci_run_id <= 0:
