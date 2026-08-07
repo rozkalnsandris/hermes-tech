@@ -46,6 +46,16 @@ Production deployment is pull-based:
 8. dependency- and database-sensitive changes remain blocked from automatic
    deployment; database migrations are never executed by this path.
 
+The systemd unit intentionally keeps `NoNewPrivileges=false` and must not use
+sandbox directives that Debian 12/systemd documents as implicitly enabling
+`no_new_privs` for an unprivileged `User=` service. The poller needs exactly one
+setuid transition: the sudoers-allowlisted invocation of
+`/usr/local/sbin/hermes-tech-deploy-main`. `PrivateTmp=true`,
+`ProtectSystem=full`, and `ProtectControlGroups=true` remain enabled because they
+preserve useful isolation without breaking that narrow privilege boundary. The
+root helper still performs its own exact-SHA, evidence-directory, ancestry,
+checkout-state, publisher-lock, build, health, and rollback validation.
+
 The `workflow_dispatch` allowance preserves the recovery property added by issue
 #33: if the original push CI was missed during an Actions interruption, an
 explicit exact-SHA manual CI can satisfy the deploy gate without weakening the
