@@ -177,9 +177,7 @@ class GitHubMainDeployContractTests(unittest.TestCase):
 
         self.assertIn("User=andris", service)
         self.assertIn("ExecStart=/usr/local/sbin/hermes-tech-pull-deploy", service)
-        self.assertIn("PrivateDevices=true", service)
         self.assertIn("ProtectSystem=full", service)
-        self.assertNotIn("NoNewPrivileges=true", service)
 
         self.assertIn("OnUnitActiveSec=2min", timer)
         self.assertIn("RandomizedDelaySec=10s", timer)
@@ -189,6 +187,40 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn("rpi5-hermes-tech-release", remover)
         self.assertIn("hermes-tech-pull-deploy.timer", remover)
         self.assertIn("production is not exact origin/main", remover)
+
+    def test_systemd_service_preserves_narrow_sudo_transition(self) -> None:
+        service = read(SERVICE)
+
+        # Debian 12/systemd implicitly enables no_new_privs for an unprivileged
+        # service when any of the directives below are set. The poller needs a
+        # single sudoers-allowlisted setuid transition into the root helper, so
+        # these settings must stay absent from this unit.
+        self.assertIn("User=andris", service)
+        self.assertIn("NoNewPrivileges=false", service)
+        self.assertIn("PrivateTmp=true", service)
+        self.assertIn("ProtectSystem=full", service)
+        self.assertIn("ProtectControlGroups=true", service)
+
+        for forbidden in (
+            "NoNewPrivileges=true",
+            "DynamicUser=",
+            "LockPersonality=",
+            "MemoryDenyWriteExecute=",
+            "PrivateDevices=",
+            "ProtectClock=",
+            "ProtectHostname=",
+            "ProtectKernelLogs=",
+            "ProtectKernelModules=",
+            "ProtectKernelTunables=",
+            "RestrictAddressFamilies=",
+            "RestrictNamespaces=",
+            "RestrictRealtime=",
+            "RestrictSUIDSGID=",
+            "SystemCallArchitectures=",
+            "SystemCallFilter=",
+            "SystemCallLog=",
+        ):
+            self.assertNotIn(forbidden, service)
 
     def test_documented_public_transition_is_fail_closed(self) -> None:
         text = read(DOC)
