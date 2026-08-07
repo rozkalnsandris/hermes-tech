@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import re
 import subprocess
 import unittest
 
@@ -22,6 +21,7 @@ OLD_RUNNER_PATHS = (
     ROOT / "tools" / "runner" / "activate-github-main-deploy.sh",
     ROOT / "tools" / "runner" / "install-github-main-deploy.sh",
     ROOT / "tools" / "runner" / "install-github-tech-runner.sh",
+    ROOT / "tools" / "runner" / "recover-pending-digest-deadlock.sh",
     ROOT / "tools" / "runner" / "release" / "hermes-tech-deploy-main",
 )
 
@@ -46,13 +46,13 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         for line in uses_lines:
             self.assertRegex(line, r"uses:\s+[^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
 
-    def test_poller_requires_exact_successful_push_ci_and_validate(self) -> None:
+    def test_poller_requires_exact_successful_ci_and_validate(self) -> None:
         text = read(POLLER)
         subprocess.run(["bash", "-n", str(POLLER)], check=True)
 
         for marker in (
             "actions/workflows/ci.yml/runs",
-            'row.get("event") == "push"',
+            'row.get("event") in {"push", "workflow_dispatch"}',
             'row.get("head_branch") == "main"',
             'row.get("head_sha") == sha',
             'row.get("conclusion") == "success"',
@@ -67,7 +67,9 @@ class GitHubMainDeployContractTests(unittest.TestCase):
 
         self.assertNotIn("git push", text)
         self.assertNotIn("git reset --hard", text)
-        self.assertNotIn("workflow_dispatch", text)
+        # Pending generated digests are validated under the publisher lock by
+        # the root helper. The poller must not reject them first.
+        self.assertNotIn("production checkout is not clean", text)
 
     def test_control_plane_changes_require_exact_sha_activation(self) -> None:
         poller = read(POLLER)
@@ -110,6 +112,31 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertNotIn("sqlite_schema.py apply", text)
         self.assertNotIn("git checkout -B", text)
         self.assertNotIn("flock -n 9", text)
+
+    def test_root_helper_preserves_only_pending_generated_digests(self) -> None:
+        text = read(HELPER)
+
+        for marker in (
+            "pending_digest_date_for_path",
+            "capture_pending_digest_state",
+            "verify_pending_digest_state",
+            "pending-digests.sha256",
+            "production checkout has tracked or staged change",
+            "production checkout has unrelated untracked path",
+            "pending digest files span multiple dates",
+            "target commit already tracks pending digest path",
+            "pending digest bytes changed during deploy",
+            "PENDING_GENERATED_DIGESTS_PRESERVED=",
+            "sha256sum",
+        ):
+            self.assertIn(marker, text)
+
+        self.assertIn(
+            r"^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})-(devops|ai|agents)\.md$".replace("\\\\", "\\"),
+            text,
+        )
+        self.assertIn("status=${line:0:2}", text)
+        self.assertIn("[[ \"$status\" == '??' ]]", text)
 
     def test_installer_timer_and_removal_are_narrow(self) -> None:
         for script in (INSTALLER, ACTIVATOR, REMOVER):
