@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/branding/project-logo.svg" alt="Hermes Tech logo" width="160">
+  <img src="assets/branding/readme-banner.svg" alt="Hermes Tech project banner" width="960">
 </p>
 
 # Hermes Tech
