@@ -18,7 +18,7 @@ OLD_SUDOERS='/etc/sudoers.d/hermes-tech-github-deploy'
 PRIMARY='/home/andris/hermes-tech'
 SOURCE='/home/andris/hermes-tech-worktrees/release-control'
 
-for command_name in bash gh git grep python3 rm sudo systemctl; do
+for command_name in gh git grep python3 rm sudo systemctl; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
 systemctl is-active --quiet hermes-tech-pull-deploy.timer || fail 'replacement pull-deploy timer is not active'
@@ -33,19 +33,21 @@ RUNNER_ID=$(python3 -c '
 import json, sys
 name = sys.argv[1]
 rows = [row for row in json.load(sys.stdin).get("runners", []) if row.get("name") == name]
-if len(rows) != 1:
-    raise SystemExit(f"expected exactly one matching runner, observed={len(rows)}")
-print(rows[0]["id"])
-' "$RUNNER_NAME" <<<"$RUNNERS_JSON") || fail 'could not resolve exactly one Hermes Tech runner'
+if len(rows) > 1:
+    raise SystemExit(f"expected at most one matching runner, observed={len(rows)}")
+print(rows[0]["id"] if rows else "")
+' "$RUNNER_NAME" <<<"$RUNNERS_JSON") || fail 'could not safely resolve Hermes Tech runner'
 
 if systemctl list-unit-files "$RUNNER_SERVICE" --no-legend 2>/dev/null | grep -Fq "$RUNNER_SERVICE"; then
     sudo systemctl disable --now "$RUNNER_SERVICE" || true
 fi
 
-gh api --method DELETE "repos/$REPO/actions/runners/$RUNNER_ID"
+if [[ -n "$RUNNER_ID" ]]; then
+    gh api --method DELETE "repos/$REPO/actions/runners/$RUNNER_ID"
+fi
 
 if [[ -x "$RUNNER_DIR/svc.sh" ]]; then
-    sudo bash -c "cd '$RUNNER_DIR' && ./svc.sh uninstall" >/dev/null 2>&1 || true
+    sudo sh -c "cd '$RUNNER_DIR' && ./svc.sh uninstall" >/dev/null 2>&1 || true
 fi
 sudo rm -rf -- "$RUNNER_DIR"
 sudo rm -f -- "$OLD_SUDOERS"
