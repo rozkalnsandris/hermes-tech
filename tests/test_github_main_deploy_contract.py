@@ -6,13 +6,24 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "deploy-main.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
-HELPER = ROOT / "tools" / "runner" / "release" / "hermes-tech-deploy-main"
-RECOVERY = ROOT / "tools" / "runner" / "recover-pending-digest-deadlock.sh"
-RUNNER_INSTALLER = ROOT / "tools" / "runner" / "install-github-tech-runner.sh"
-HELPER_INSTALLER = ROOT / "tools" / "runner" / "install-github-main-deploy.sh"
-ACTIVATOR = ROOT / "tools" / "runner" / "activate-github-main-deploy.sh"
+OLD_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-main.yml"
+POLLER = ROOT / "tools" / "pull-deploy" / "release" / "hermes-tech-pull-deploy"
+HELPER = ROOT / "tools" / "pull-deploy" / "release" / "hermes-tech-deploy-main"
+INSTALLER = ROOT / "tools" / "pull-deploy" / "install-pull-deploy.sh"
+ACTIVATOR = ROOT / "tools" / "pull-deploy" / "activate-pull-deploy.sh"
+REMOVER = ROOT / "tools" / "pull-deploy" / "remove-self-hosted-runner.sh"
+RETIRED_RECOVERY = ROOT / "tools" / "runner" / "recover-pending-digest-deadlock.sh"
+SERVICE = ROOT / "ops" / "systemd" / "hermes-tech-pull-deploy.service"
+TIMER = ROOT / "ops" / "systemd" / "hermes-tech-pull-deploy.timer"
+DOC = ROOT / "docs" / "public-repository-hardening.md"
+
+OLD_RUNNER_PATHS = (
+    ROOT / "tools" / "runner" / "activate-github-main-deploy.sh",
+    ROOT / "tools" / "runner" / "install-github-main-deploy.sh",
+    ROOT / "tools" / "runner" / "install-github-tech-runner.sh",
+    ROOT / "tools" / "runner" / "release" / "hermes-tech-deploy-main",
+)
 
 
 def read(path: Path) -> str:
@@ -20,52 +31,60 @@ def read(path: Path) -> str:
 
 
 class GitHubMainDeployContractTests(unittest.TestCase):
-    def test_workflow_queues_every_successful_main_ci_serially(self) -> None:
-        text = read(WORKFLOW)
+    def test_public_repo_has_no_github_to_rpi5_runner_workflow(self) -> None:
+        self.assertFalse(OLD_WORKFLOW.exists())
+        for path in OLD_RUNNER_PATHS:
+            self.assertFalse(path.exists(), path)
+
+        ci = read(CI)
+        self.assertIn("runs-on: ubuntu-24.04", ci)
+        self.assertNotIn("self-hosted", ci)
+        self.assertNotIn("hermes-tech-release", ci)
+
+        uses_lines = [line.strip() for line in ci.splitlines() if "uses:" in line]
+        self.assertTrue(uses_lines)
+        for line in uses_lines:
+            self.assertRegex(line, r"uses:\s+[^@\s]+@[0-9a-f]{40}(?:\s+#.*)?$")
+
+    def test_poller_requires_exact_successful_ci_and_validate(self) -> None:
+        text = read(POLLER)
+        subprocess.run(["bash", "-n", str(POLLER)], check=True)
 
         for marker in (
-            "workflow_run:",
-            "workflows:\n      - CI",
-            "types:\n      - completed",
-            "branches:\n      - main",
-            "workflow_dispatch:",
-            "github.event.workflow_run.conclusion == 'success'",
-            "hermes-tech-release",
+            "actions/workflows/ci.yml/runs",
+            'row.get("event") in {"push", "workflow_dispatch"}',
+            'row.get("head_branch") == "main"',
+            'row.get("head_sha") == sha',
+            'row.get("conclusion") == "success"',
+            'row.get("name") == "validate"',
+            "WAIT_CI",
+            "WAIT_CONTROL_PLANE_APPROVAL",
+            "merge-base --is-ancestor",
+            "sudo --non-interactive",
             "/usr/local/sbin/hermes-tech-deploy-main",
-            "https://tech.rozkalns.net/",
-            "actions/upload-artifact@v6",
         ):
             self.assertIn(marker, text)
 
-        self.assertNotIn("actions/upload-artifact@v4", text)
-        self.assertNotIn("actions/checkout", text)
-        self.assertNotIn("concurrency:", text)
+        self.assertNotIn("git push", text)
+        self.assertNotIn("git reset --hard", text)
+        # Pending generated digests are validated under the publisher lock by
+        # the root helper. The poller must not reject them first.
+        self.assertNotIn("production checkout is not clean", text)
 
-    def test_manual_deploy_can_recover_from_exact_sha_manual_ci(self) -> None:
-        text = read(WORKFLOW)
-        self.assertIn(
-            'row.get("event") in {"push", "workflow_dispatch"}',
-            text,
-        )
-        self.assertIn(
-            'raise SystemExit("current main has no successful exact-SHA CI run")',
-            text,
-        )
-        # Automatic workflow_run deployment remains push-only. Manual CI is an
-        # explicit recovery credential, never an automatic production trigger.
-        self.assertIn('if run.get("event") != "push"', text)
+    def test_control_plane_changes_require_exact_sha_activation(self) -> None:
+        poller = read(POLLER)
+        activator = read(ACTIVATOR)
+        doc = read(DOC)
 
-    def test_main_push_ci_runs_are_not_cancelled_by_newer_merges(self) -> None:
-        text = read(CI)
-        self.assertIn(
-            "ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}",
-            text,
-        )
-        self.assertIn(
-            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
-            text,
-        )
-        self.assertNotIn("group: ci-${{ github.workflow }}-${{ github.ref }}", text)
+        for marker in (
+            ".github/workflows/*",
+            "tools/pull-deploy/*",
+            "approved-control-plane-sha",
+        ):
+            self.assertIn(marker, poller)
+
+        self.assertIn('printf \'%s\\n\' "$HEAD_SHA" >"$CONTROL_APPROVAL"', activator)
+        self.assertIn("exact-SHA local approval", doc)
 
     def test_root_helper_serializes_with_publisher_and_rolls_back(self) -> None:
         text = read(HELPER)
@@ -84,6 +103,7 @@ class GitHubMainDeployContractTests(unittest.TestCase):
             "DATABASE_MIGRATIONS_EXECUTED=false",
             "DEPENDENCIES_CHANGED=false",
             "ROLLBACK_PERFORMED=false",
+            "pyproject.toml",
         ):
             self.assertIn(marker, text)
 
@@ -91,7 +111,7 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertNotIn("pip install", text)
         self.assertNotIn("sqlite_schema.py apply", text)
         self.assertNotIn("git checkout -B", text)
-        self.assertNotIn("flock -n", text)
+        self.assertNotIn("flock -n 9", text)
 
     def test_root_helper_preserves_only_pending_generated_digests(self) -> None:
         text = read(HELPER)
@@ -118,87 +138,69 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn("status=${line:0:2}", text)
         self.assertIn("[[ \"$status\" == '??' ]]", text)
 
-    def test_owner_recovery_is_remote_ahead_only_and_republishes_existing_digests(self) -> None:
-        text = read(RECOVERY)
-        subprocess.run(["bash", "-n", str(RECOVERY)], check=True)
-
-        for marker in (
-            'exec 8>"$PRIMARY/.digest-pipeline.lock"',
-            "flock -n 8",
-            "production is not behind origin/main; this recovery only handles REMOTE_AHEAD",
-            'git -C "$PRIMARY" merge-base --is-ancestor "$LOCAL_SHA" "$REMOTE_SHA"',
-            "unexpected tracked/staged production change",
-            "unexpected untracked production path",
-            "origin/main already tracks pending digest path",
-            "backup checksum mismatch",
-            "restored checksum mismatch",
-            'sudo --non-interactive "$DEPLOY_HELPER" "$REMOTE_SHA" "$EVIDENCE_DIR"',
-            'sudo bash "$INSTALLER_REL"',
-            '"$PRIMARY/digest.py" validate',
-            '"$PRIMARY/digest.py" publish "$category" "$PENDING_DATE"',
-            "DEPLOY_DEADLOCK_RECOVERY_RESULT=PASS",
-            "DATABASE_MIGRATIONS_EXECUTED=false",
-            "DEPENDENCY_INSTALL_EXECUTED=false",
-            "FORCE_PUSH_EXECUTED=false",
-        ):
-            self.assertIn(marker, text)
-
+    def test_one_time_deadlock_recovery_is_retired_fail_closed(self) -> None:
+        text = read(RETIRED_RECOVERY)
+        subprocess.run(["bash", "-n", str(RETIRED_RECOVERY)], check=True)
+        self.assertIn("one-time 2026-08-07 recovery helper is retired", text)
+        self.assertIn("issue #33", text)
+        self.assertIn("public-repository-hardening.md", text)
+        self.assertIn("exit 1", text)
         for forbidden in (
-            "git push --force",
-            "git reset --hard",
-            "git rebase",
-            "pip install",
-            "sqlite_schema.py apply",
+            "sudo ",
+            "git reset",
+            "git push",
+            "digest.py",
+            "systemctl",
         ):
             self.assertNotIn(forbidden, text)
 
-    def test_installers_are_narrow_and_runner_has_no_docker_group(self) -> None:
-        for script in (RUNNER_INSTALLER, HELPER_INSTALLER, ACTIVATOR):
+    def test_installer_timer_and_removal_are_narrow(self) -> None:
+        for script in (INSTALLER, ACTIVATOR, REMOVER):
             subprocess.run(["bash", "-n", str(script)], check=True)
 
-        runner = read(RUNNER_INSTALLER)
-        helper_installer = read(HELPER_INSTALLER)
+        installer = read(INSTALLER)
         activator = read(ACTIVATOR)
+        remover = read(REMOVER)
+        service = read(SERVICE)
+        timer = read(TIMER)
 
-        self.assertIn("rpi5-hermes-tech-release", runner)
-        self.assertIn('--labels "$RUNNER_LABEL"', runner)
-        self.assertIn("RUNNER_HAS_DOCKER_GROUP=false", runner)
         self.assertIn(
-            'mktemp -d "$RUNNER_HOME/.actions-runner-stage.XXXXXXXX"',
-            runner,
+            "andris ALL=(root) NOPASSWD: /usr/local/sbin/hermes-tech-deploy-main *",
+            installer,
         )
-        self.assertIn('rm -rf -- "$RUNNER_DIR"', runner)
-        self.assertIn('mv -- "$TMP_COPY" "$RUNNER_DIR"', runner)
-        self.assertNotIn("/tmp/hermes-tech-runner-copy", runner)
-        self.assertNotIn('find "$TMP_COPY" -mindepth 1', runner)
+        self.assertIn("PRODUCTION_CHANGED=false", installer)
+        self.assertNotIn("systemctl enable --now", installer)
 
-        for forbidden_state in (
-            ".credentials",
-            ".credentials_migrated",
-            ".credentials_rsaparams",
-            ".runner",
-            ".runner_migrated",
-            ".service",
-            ".env",
-            "_diag",
-            "_work",
+        self.assertIn("systemctl enable --now hermes-tech-pull-deploy.timer", activator)
+        self.assertIn("277435981+rozkalnsandris@users.noreply.github.com", activator)
+        self.assertIn("PUBLIC_SITE=PASS", activator)
+
+        self.assertIn("User=andris", service)
+        self.assertIn("ExecStart=/usr/local/sbin/hermes-tech-pull-deploy", service)
+        self.assertIn("PrivateDevices=true", service)
+        self.assertIn("ProtectSystem=full", service)
+        self.assertNotIn("NoNewPrivileges=true", service)
+
+        self.assertIn("OnUnitActiveSec=2min", timer)
+        self.assertIn("RandomizedDelaySec=10s", timer)
+
+        self.assertIn("actions/runners?per_page=100", remover)
+        self.assertIn("--method DELETE", remover)
+        self.assertIn("rpi5-hermes-tech-release", remover)
+        self.assertIn("hermes-tech-pull-deploy.timer", remover)
+        self.assertIn("production is not exact origin/main", remover)
+
+    def test_documented_public_transition_is_fail_closed(self) -> None:
+        text = read(DOC)
+        for marker in (
+            "no credential patterns",
+            "not to rewrite Git history",
+            "GitHub noreply identity",
+            "deregister and remove",
+            "all_external_contributors",
+            "main` rulesets",
         ):
-            self.assertIn(f'"$TMP_COPY/{forbidden_state}"', runner)
-
-        self.assertIn(".runner_migrated as configured state", runner)
-        self.assertIn("--exclude='./.runner_migrated'", runner)
-        self.assertIn("--exclude='./.credentials_migrated'", runner)
-        self.assertIn('cd "$RUNNER_DIR"', runner)
-        self.assertIn("./config.sh", runner)
-        self.assertNotIn('"$RUNNER_DIR/config.sh"', runner)
-        self.assertIn("copied runner retained forbidden state", runner)
-        self.assertIn(
-            "github-tech-runner ALL=(root) NOPASSWD: "
-            "/usr/local/sbin/hermes-tech-deploy-main *",
-            helper_installer,
-        )
-        self.assertIn("PRODUCTION_CHANGED=false", helper_installer)
-        self.assertIn("actions/runners/registration-token", activator)
+            self.assertIn(marker, text)
 
 
 if __name__ == "__main__":

@@ -16,10 +16,10 @@ fail() {
 TARGET_SHA=$1
 EVIDENCE_DIR=$(readlink -f -- "$2")
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'target SHA must be 40 lowercase hex characters'
-[[ "$EVIDENCE_DIR" =~ ^/home/github-tech-runner/actions-runner/_work/_temp/hermes-tech-main-deploy-[0-9]+-[0-9]+$ ]] \
-    || fail 'evidence directory is outside the runner temp allowlist'
+[[ "$EVIDENCE_DIR" =~ ^/home/andris/\.local/state/hermes-tech-main-deploy/evidence/deploy-[0-9a-f]{40}-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] \
+    || fail 'evidence directory is outside the pull-deploy allowlist'
 [[ -d "$EVIDENCE_DIR" && ! -L "$EVIDENCE_DIR" ]] || fail 'evidence directory is missing or unsafe'
-[[ "$(stat -c '%U:%G' "$EVIDENCE_DIR")" == 'github-tech-runner:github-tech-runner' ]] \
+[[ "$(stat -c '%U:%G' "$EVIDENCE_DIR")" == 'andris:andris' ]] \
     || fail 'evidence directory ownership is invalid'
 [[ "$(stat -c '%a' "$EVIDENCE_DIR")" == '700' ]] || fail 'evidence directory permissions must be 0700'
 
@@ -41,7 +41,7 @@ finish() {
     if [[ -n "$WORK" && -d "$WORK" ]]; then
         rm -rf -- "$WORK" || true
     fi
-    chown -R github-tech-runner:github-tech-runner "$EVIDENCE_DIR" || true
+    chown -R "$OWNER:$OWNER" "$EVIDENCE_DIR" || true
     trap - EXIT
     exit "$rc"
 }
@@ -235,7 +235,7 @@ owner_git "$SOURCE" merge-base --is-ancestor "$OLD_SHA" "$TARGET_SHA" \
 mapfile -t changed_paths < <(owner_git "$SOURCE" diff --name-only "$OLD_SHA..$TARGET_SHA")
 for changed_path in "${changed_paths[@]}"; do
     case "$changed_path" in
-        .python-version|requirements-bootstrap.txt|requirements.txt|requirements-dev.txt|hermes_db.py|tools/sqlite_schema.py)
+        .python-version|pyproject.toml|requirements-bootstrap.txt|requirements.txt|requirements-dev.txt|hermes_db.py|tools/sqlite_schema.py)
             fail "automatic deploy blocked by dependency or database-sensitive change: $changed_path"
             ;;
     esac
