@@ -17,7 +17,7 @@ INSTALLER_REL='tools/runner/install-github-main-deploy.sh'
 RUNNER_TEMP='/home/github-tech-runner/actions-runner/_work/_temp'
 PUBLIC_URL='https://tech.rozkalns.net/'
 
-for command_name in awk bash cp curl flock git install mkdir mktemp rm sha256sum sudo; do
+for command_name in awk bash cp curl date dirname flock git install mkdir mktemp rm sha256sum sudo; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
 
@@ -85,7 +85,6 @@ done < <(git -C "$PRIMARY" status --porcelain=v1 --untracked-files=all)
 
 BACKUP_DIR=$(mktemp -d "$HOME/.hermes-tech-digest-recovery.XXXXXXXX")
 SUCCESS=0
-PENDING_REMOVED=0
 
 cleanup() {
     local rc=$?
@@ -120,7 +119,6 @@ flock -w 30 9 || fail 'could not acquire publication lock'
 for path in "${PENDING_PATHS[@]}"; do
     rm -- "$PRIMARY/$path"
 done
-PENDING_REMOVED=1
 [[ -z "$(git -C "$PRIMARY" status --porcelain=v1 --untracked-files=all)" ]] || fail \
     'production did not become clean after protecting pending digests'
 flock -u 9
@@ -151,17 +149,22 @@ for path in "${PENDING_PATHS[@]}"; do
     [[ "$(sha256sum "$PRIMARY/$path" | awk '{print $1}')" == "${PENDING_SHA256[$path]}" ]] || fail \
         "restored checksum mismatch for $path"
 done
-PENDING_REMOVED=0
 flock -u 9
 
 printf 'RECOVER: validating already-generated digests\n'
 HERMES_TECH_ROOT="$PRIMARY" "$PRIMARY/venv/bin/python" "$PRIMARY/digest.py" validate
 
+RECOVERED_CATEGORIES=''
 for category in devops ai agents; do
     [[ ${CATEGORY_PATH[$category]+present} == present ]] || continue
     printf 'RECOVER: publishing %s digest for %s\n' "$category" "$PENDING_DATE"
     HERMES_TECH_ROOT="$PRIMARY" \
         "$PRIMARY/venv/bin/python" "$PRIMARY/digest.py" publish "$category" "$PENDING_DATE"
+    if [[ -z "$RECOVERED_CATEGORIES" ]]; then
+        RECOVERED_CATEGORIES=$category
+    else
+        RECOVERED_CATEGORIES="$RECOVERED_CATEGORIES,$category"
+    fi
 done
 
 [[ -z "$(git -C "$PRIMARY" status --porcelain=v1 --untracked-files=all)" ]] || fail \
@@ -174,7 +177,7 @@ curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" >/dev/null
 SUCCESS=1
 printf 'DEPLOY_DEADLOCK_RECOVERY_RESULT=PASS\n'
 printf 'RECOVERED_DATE=%s\n' "$PENDING_DATE"
-printf 'RECOVERED_CATEGORIES=%s\n' "${!CATEGORY_PATH[*]}"
+printf 'RECOVERED_CATEGORIES=%s\n' "$RECOVERED_CATEGORIES"
 printf 'PRE_RECOVERY_PRODUCTION_SHA=%s\n' "$LOCAL_SHA"
 printf 'RECOVERY_BASE_MAIN_SHA=%s\n' "$REMOTE_SHA"
 printf 'DEPLOY_EVIDENCE_DIR=%s\n' "$EVIDENCE_DIR"
