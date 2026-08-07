@@ -13,13 +13,14 @@ Environment=HOME=/home/andris
 Environment=GH_CONFIG_DIR=/home/andris/.config/gh
 UMask=0077
 ExecStart=/usr/local/sbin/hermes-tech-pull-deploy
+
+# The unprivileged poller must be able to exec the single sudoers-allowlisted
+# root helper. On Debian 12/systemd, several otherwise useful sandbox options
+# implicitly force no_new_privs for User= services and therefore make sudo's
+# setuid transition impossible. Keep only sandboxing that is compatible with
+# this narrow privilege boundary; the root helper itself remains separately
+# validated, exact-SHA gated, and serialized with the publisher lock.
+NoNewPrivileges=false
 PrivateTmp=true
-PrivateDevices=true
 ProtectSystem=full
-ProtectKernelTunables=true
-ProtectKernelModules=true
 ProtectControlGroups=true
-ProtectClock=true
-LockPersonality=true
-RestrictNamespaces=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
