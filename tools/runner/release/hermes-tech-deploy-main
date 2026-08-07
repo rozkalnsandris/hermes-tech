@@ -120,24 +120,38 @@ verify_pending_digest_state() {
         [[ -z "$line" ]] && continue
         status=${line:0:2}
         path=${line:3}
-        [[ "$status" == '??' ]] || fail \
-            "production checkout gained tracked or staged change: $line"
-        [[ ${PENDING_DIGEST_SHA256[$path]+present} == present ]] || fail \
-            "production checkout gained unrelated untracked path: $path"
-        [[ ${seen[$path]+present} != present ]] || fail \
-            "duplicate pending digest path in status: $path"
-        [[ -f "$PRIMARY/$path" && ! -L "$PRIMARY/$path" ]] || fail \
-            "pending digest disappeared or changed type: $path"
+        if [[ "$status" != '??' ]]; then
+            printf 'ERROR: production checkout gained tracked or staged change: %s\n' "$line" >&2
+            return 1
+        fi
+        if [[ ${PENDING_DIGEST_SHA256[$path]+present} != present ]]; then
+            printf 'ERROR: production checkout gained unrelated untracked path: %s\n' "$path" >&2
+            return 1
+        fi
+        if [[ ${seen[$path]+present} == present ]]; then
+            printf 'ERROR: duplicate pending digest path in status: %s\n' "$path" >&2
+            return 1
+        fi
+        if [[ ! -f "$PRIMARY/$path" || -L "$PRIMARY/$path" ]]; then
+            printf 'ERROR: pending digest disappeared or changed type: %s\n' "$path" >&2
+            return 1
+        fi
         hash=$(sha256sum "$PRIMARY/$path" | awk '{print $1}')
         expected=${PENDING_DIGEST_SHA256[$path]}
-        [[ "$hash" == "$expected" ]] || fail \
-            "pending digest bytes changed during deploy: $path"
+        if [[ "$hash" != "$expected" ]]; then
+            printf 'ERROR: pending digest bytes changed during deploy: %s\n' "$path" >&2
+            return 1
+        fi
         seen["$path"]=1
         actual_count=$((actual_count + 1))
     done < <(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)
 
-    [[ $actual_count -eq ${#PENDING_DIGEST_PATHS[@]} ]] || fail \
-        "pending digest set changed during deploy: expected=${#PENDING_DIGEST_PATHS[@]} actual=$actual_count"
+    if [[ $actual_count -ne ${#PENDING_DIGEST_PATHS[@]} ]]; then
+        printf 'ERROR: pending digest set changed during deploy: expected=%s actual=%s\n' \
+            "${#PENDING_DIGEST_PATHS[@]}" "$actual_count" >&2
+        return 1
+    fi
+    return 0
 }
 
 write_pending_digest_evidence() {
