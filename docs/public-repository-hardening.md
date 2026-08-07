@@ -31,20 +31,32 @@ Production deployment is pull-based:
 
 1. the unprivileged `andris` systemd service fetches `origin/main`;
 2. it refuses anything that is not a fast-forward descendant of production;
-3. it requires a successful GitHub Actions `CI` run triggered by `push` for the
-   exact current `main` SHA;
+3. it requires a successful GitHub Actions `CI` run triggered by `push` or an
+   explicit `workflow_dispatch` for the exact current `main` SHA;
 4. it independently requires exactly one successful `validate` job in that run;
 5. control-plane changes require an exact-SHA local approval written only by the
    activation procedure;
 6. the poller invokes one narrow root helper through sudo;
-7. the root helper serializes with `.publish.lock`, performs a staged Hugo build,
-   fast-forwards only, verifies the public site, and rolls back both checkout and
-   public files on failure;
+7. the root helper serializes with `.publish.lock`, permits only the explicit
+   same-date untracked generated-digest allowlist, records SHA256 values for those
+   pending digest sources, rejects tracked/staged/unrelated/path-collision state,
+   performs a staged Hugo build, fast-forwards only, verifies the pending bytes
+   again after apply and rollback, verifies the public site, and rolls back both
+   checkout and public files on failure;
 8. dependency- and database-sensitive changes remain blocked from automatic
    deployment; database migrations are never executed by this path.
 
+The `workflow_dispatch` allowance preserves the recovery property added by issue
+#33: if the original push CI was missed during an Actions interruption, an
+explicit exact-SHA manual CI can satisfy the deploy gate without weakening the
+automatic path.
+
 The timer polls every two minutes. A missing or failed CI produces a no-op and is
 retried by the next timer run.
+
+The one-time `recover-pending-digest-deadlock.sh` used to resolve the 2026-08-07
+incident is retained only as a fail-closed retired stub. The durable pending-
+digest safety contract lives in the pull-deploy root helper.
 
 ## Control-plane changes
 
