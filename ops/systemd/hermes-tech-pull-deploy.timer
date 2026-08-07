@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll GitHub main for verified Hermes Tech deployments
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=15s
+RandomizedDelaySec=10s
+Unit=hermes-tech-pull-deploy.service
+
+[Install]
+WantedBy=timers.target
