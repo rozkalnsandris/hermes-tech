@@ -1,0 +1,25 @@
+[Unit]
+Description=Hermes Tech pull-based main deployment
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/home/andris/hermes-tech
+ConditionPathExists=/home/andris/hermes-tech-worktrees/release-control
+
+[Service]
+Type=oneshot
+User=andris
+Group=andris
+Environment=HOME=/home/andris
+Environment=GH_CONFIG_DIR=/home/andris/.config/gh
+UMask=0077
+ExecStart=/usr/local/sbin/hermes-tech-pull-deploy
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
