@@ -112,7 +112,7 @@ class GitHubMainDeployContractTests(unittest.TestCase):
             self.assertIn(marker, text)
 
         self.assertIn(
-            r"^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})-(devops|ai|agents)\.md$",
+            r"^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})-(devops|ai|agents)\.md$".replace("\\\\", "\\"),
             text,
         )
         self.assertIn("status=${line:0:2}", text)
