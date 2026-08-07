@@ -144,6 +144,20 @@ host infrastructure source of truth before changing it. A merge never
 implicitly authorizes production deployment, database migration, cron changes,
 or service reloads.
 
+## Shared public ingress ownership
+
+`tech.rozkalns.net` is intentionally public, but this repository does not own
+the shared Cloudflare connector. `RPi5_main` owns the RPi5 host-level systemd
+`cloudflared.service` and its credential; Cloudflare remotely manages the
+published route. Hermes Tech owns only its application origin and public health
+contract.
+
+Hermes Tech deployment, publication and rollback must never install, restart,
+replace, reconcile or roll back the shared connector, and no shared Tunnel
+credential belongs in this repository or its runtime. Connector lifecycle and
+host firewall policy are infrastructure work, separate from content
+publication.
+
 ## Generated-content Git policy
 
 Published output intentionally remains tracked:
