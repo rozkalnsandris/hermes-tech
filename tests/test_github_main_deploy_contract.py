@@ -67,8 +67,6 @@ class GitHubMainDeployContractTests(unittest.TestCase):
 
         self.assertNotIn("git push", text)
         self.assertNotIn("git reset --hard", text)
-        # Pending generated digests are validated under the publisher lock by
-        # the root helper. The poller must not reject them first.
         self.assertNotIn("production checkout is not clean", text)
 
     def test_control_plane_changes_require_exact_sha_activation(self) -> None:
@@ -188,13 +186,25 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn("hermes-tech-pull-deploy.timer", remover)
         self.assertIn("production is not exact origin/main", remover)
 
+    def test_activation_canary_precedes_recurring_timer(self) -> None:
+        activator = read(ACTIVATOR)
+        disable = "sudo systemctl disable --now hermes-tech-pull-deploy.timer"
+        canary = "sudo systemctl start hermes-tech-pull-deploy.service"
+        enable = "sudo systemctl enable --now hermes-tech-pull-deploy.timer"
+        production_gate = "production did not reach the activated main SHA"
+        public_gate = "https://tech.rozkalns.net/"
+
+        for marker in (disable, canary, enable, production_gate, public_gate):
+            self.assertIn(marker, activator)
+
+        self.assertLess(activator.index(disable), activator.index(canary))
+        self.assertLess(activator.index(canary), activator.index(production_gate))
+        self.assertLess(activator.index(production_gate), activator.index(enable))
+        self.assertLess(activator.index(public_gate), activator.index(enable))
+
     def test_systemd_service_preserves_narrow_sudo_transition(self) -> None:
         service = read(SERVICE)
 
-        # Debian 12/systemd implicitly enables no_new_privs for an unprivileged
-        # service when any of the directives below are set. The poller needs a
-        # single sudoers-allowlisted setuid transition into the root helper, so
-        # these settings must stay absent from this unit.
         self.assertIn("User=andris", service)
         self.assertIn("NoNewPrivileges=false", service)
         self.assertIn("PrivateTmp=true", service)
