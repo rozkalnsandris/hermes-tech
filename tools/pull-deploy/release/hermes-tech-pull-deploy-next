@@ -1,3 +1,141 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
-# Temporary staging file for PR #36. Replaced before PR readiness.
+IFS=$'\n\t'
+umask 077
+PATH='/home/andris/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+
+fail() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ ${EUID:-$(id -u)} -ne 0 ]] || fail 'pull deploy must run as the unprivileged andris user'
+
+REPO='rozkalnsandris/hermes-tech'
+PRIMARY='/home/andris/hermes-tech'
+SOURCE='/home/andris/hermes-tech-worktrees/release-control'
+STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
+EVIDENCE_ROOT="$STATE_ROOT/evidence"
+CONTROL_APPROVAL="$STATE_ROOT/approved-control-plane-sha"
+LOCK_FILE="$STATE_ROOT/poll.lock"
+HELPER='/usr/local/sbin/hermes-tech-deploy-main'
+
+for command_name in date flock gh git install python3 rm sudo tr; do
+    command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
+done
+[[ -x "$HELPER" && ! -L "$HELPER" ]] || fail 'installed deploy helper is missing or unsafe'
+[[ -d "$PRIMARY" && ! -L "$PRIMARY" ]] || fail 'production root is missing or unsafe'
+[[ -d "$SOURCE" && ! -L "$SOURCE" ]] || fail 'release-control worktree is missing or unsafe'
+
+gh auth status --hostname github.com >/dev/null 2>&1 || fail 'GitHub CLI authentication is unavailable'
+install -d -m 0700 "$STATE_ROOT" "$EVIDENCE_ROOT"
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    printf 'PULL_DEPLOY_RESULT=NO_OP_BUSY\n'
+    exit 0
+fi
+
+git -C "$SOURCE" fetch --prune origin main
+[[ -z "$(git -C "$SOURCE" branch --show-current)" ]] || fail 'release-control worktree must remain detached'
+[[ -z "$(git -C "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] \
+    || fail 'release-control worktree is not clean'
+[[ "$(git -C "$PRIMARY" branch --show-current)" == 'main' ]] || fail 'production checkout must remain on main'
+
+TARGET_SHA=$(git -C "$SOURCE" rev-parse refs/remotes/origin/main)
+PRODUCTION_SHA=$(git -C "$PRIMARY" rev-parse HEAD)
+[[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'origin/main SHA is invalid'
+[[ "$PRODUCTION_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'production SHA is invalid'
+
+if [[ "$TARGET_SHA" == "$PRODUCTION_SHA" ]]; then
+    printf 'PULL_DEPLOY_RESULT=NO_OP_ALREADY_CURRENT\n'
+    printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+    exit 0
+fi
+
+git -C "$SOURCE" cat-file -e "${TARGET_SHA}^{commit}" || fail 'target SHA is not locally available'
+git -C "$SOURCE" cat-file -e "${PRODUCTION_SHA}^{commit}" || fail 'production SHA is not locally available'
+git -C "$SOURCE" merge-base --is-ancestor "$PRODUCTION_SHA" "$TARGET_SHA" \
+    || fail 'production SHA is not an ancestor of current origin/main'
+
+CONTROL_PLANE_CHANGED=false
+mapfile -t changed_paths < <(git -C "$SOURCE" diff --name-only "$PRODUCTION_SHA..$TARGET_SHA")
+for changed_path in "${changed_paths[@]}"; do
+    case "$changed_path" in
+        .github/workflows/*|tools/pull-deploy/*|ops/systemd/hermes-tech-pull-deploy.service|ops/systemd/hermes-tech-pull-deploy.timer)
+            CONTROL_PLANE_CHANGED=true
+            ;;
+    esac
+done
+
+if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
+    APPROVED_SHA=''
+    if [[ -f "$CONTROL_APPROVAL" && ! -L "$CONTROL_APPROVAL" ]]; then
+        APPROVED_SHA=$(tr -d '[:space:]' < "$CONTROL_APPROVAL")
+    fi
+    if [[ "$APPROVED_SHA" != "$TARGET_SHA" ]]; then
+        printf 'PULL_DEPLOY_RESULT=WAIT_CONTROL_PLANE_APPROVAL\n'
+        printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+        exit 0
+    fi
+fi
+
+RUNS_JSON=$(gh api \
+    -H 'Accept: application/vnd.github+json' \
+    "repos/$REPO/actions/workflows/ci.yml/runs?branch=main&head_sha=$TARGET_SHA&status=completed&per_page=100")
+CI_RUN_ID=$(python3 -c '
+import json, sys
+sha = sys.argv[1]
+data = json.load(sys.stdin)
+runs = [
+    row for row in data.get("workflow_runs", [])
+    if row.get("event") in {"push", "workflow_dispatch"}
+    and row.get("head_branch") == "main"
+    and row.get("head_sha") == sha
+    and row.get("status") == "completed"
+    and row.get("conclusion") == "success"
+]
+print(max((int(row["id"]) for row in runs), default=""))
+' "$TARGET_SHA" <<<"$RUNS_JSON")
+
+if [[ -z "$CI_RUN_ID" ]]; then
+    printf 'PULL_DEPLOY_RESULT=WAIT_CI\n'
+    printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+    exit 0
+fi
+
+JOBS_JSON=$(gh api \
+    -H 'Accept: application/vnd.github+json' \
+    "repos/$REPO/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100")
+python3 -c '
+import json, sys
+jobs = json.load(sys.stdin).get("jobs", [])
+validate = [row for row in jobs if row.get("name") == "validate"]
+if len(validate) != 1:
+    raise SystemExit(f"expected exactly one validate job, observed={len(validate)}")
+job = validate[0]
+if job.get("status") != "completed" or job.get("conclusion") != "success":
+    raise SystemExit("validate job is not completed/success")
+' <<<"$JOBS_JSON" || fail 'successful exact-SHA CI does not contain exactly one successful validate job'
+
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+EVIDENCE_DIR="$EVIDENCE_ROOT/deploy-$TARGET_SHA-$STAMP-$$"
+install -d -m 0700 "$EVIDENCE_DIR"
+printf 'TARGET_SHA=%s\nCI_RUN_ID=%s\nCONTROL_PLANE_CHANGED=%s\n' \
+    "$TARGET_SHA" "$CI_RUN_ID" "$CONTROL_PLANE_CHANGED" \
+    >"$EVIDENCE_DIR/preflight.env"
+chmod 0600 "$EVIDENCE_DIR/preflight.env"
+
+sudo --non-interactive "$HELPER" "$TARGET_SHA" "$EVIDENCE_DIR"
+
+if [[ "$CONTROL_PLANE_CHANGED" == true && -f "$CONTROL_APPROVAL" ]]; then
+    APPROVED_SHA=$(tr -d '[:space:]' < "$CONTROL_APPROVAL")
+    if [[ "$APPROVED_SHA" == "$TARGET_SHA" ]]; then
+        rm -f -- "$CONTROL_APPROVAL"
+    fi
+fi
+
+printf 'PULL_DEPLOY_RESULT=PASS\n'
+printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+printf 'CI_RUN_ID=%s\n' "$CI_RUN_ID"
+printf 'EVIDENCE_DIR=%s\n' "$EVIDENCE_DIR"
