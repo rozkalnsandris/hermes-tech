@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+# Temporary staging file for PR #36. Replaced before PR readiness.
