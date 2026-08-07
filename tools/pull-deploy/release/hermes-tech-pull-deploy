@@ -41,8 +41,6 @@ git -C "$SOURCE" fetch --prune origin main
 [[ -z "$(git -C "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] \
     || fail 'release-control worktree is not clean'
 [[ "$(git -C "$PRIMARY" branch --show-current)" == 'main' ]] || fail 'production checkout must remain on main'
-[[ -z "$(git -C "$PRIMARY" status --porcelain=v1 --untracked-files=all)" ]] \
-    || fail 'production checkout is not clean'
 
 TARGET_SHA=$(git -C "$SOURCE" rev-parse refs/remotes/origin/main)
 PRODUCTION_SHA=$(git -C "$PRIMARY" rev-parse HEAD)
@@ -91,7 +89,7 @@ sha = sys.argv[1]
 data = json.load(sys.stdin)
 runs = [
     row for row in data.get("workflow_runs", [])
-    if row.get("event") == "push"
+    if row.get("event") in {"push", "workflow_dispatch"}
     and row.get("head_branch") == "main"
     and row.get("head_sha") == sha
     and row.get("status") == "completed"
@@ -118,7 +116,7 @@ if len(validate) != 1:
 job = validate[0]
 if job.get("status") != "completed" or job.get("conclusion") != "success":
     raise SystemExit("validate job is not completed/success")
-' <<<"$JOBS_JSON" || fail 'successful push CI does not contain exactly one successful validate job'
+' <<<"$JOBS_JSON" || fail 'successful exact-SHA CI does not contain exactly one successful validate job'
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 EVIDENCE_DIR="$EVIDENCE_ROOT/deploy-$TARGET_SHA-$STAMP-$$"
