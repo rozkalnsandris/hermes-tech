@@ -62,7 +62,10 @@ explicit exact-SHA manual CI can satisfy the deploy gate without weakening the
 automatic path.
 
 The timer polls every two minutes. A missing or failed CI produces a no-op and is
-retried by the next timer run.
+retried by the next timer run. During control-plane activation the recurring
+timer is explicitly kept disabled until a one-shot canary has deployed the exact
+approved SHA, production matches that SHA, and the public site health check has
+passed. Only then is the timer enabled.
 
 The one-time `recover-pending-digest-deadlock.sh` used to resolve the 2026-08-07
 incident is retained only as a fail-closed retired stub. The durable pending-
