@@ -28,6 +28,8 @@ REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
 [[ -z "$(git branch --show-current)" ]] || fail 'release-control must remain detached'
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || fail 'release-control worktree is not clean'
 
+# Never let an old or newly installed timer race the activation canary.
+sudo systemctl disable --now hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
 sudo bash ./tools/pull-deploy/install-pull-deploy.sh
 
 # Preserve historical commit SHAs, but keep future local publisher/operator commits private.
@@ -40,7 +42,9 @@ install -d -m 0700 "$STATE_ROOT"
 printf '%s\n' "$HEAD_SHA" >"$CONTROL_APPROVAL"
 chmod 0600 "$CONTROL_APPROVAL"
 
-sudo systemctl enable --now hermes-tech-pull-deploy.timer
+# Canary first. The recurring timer is enabled only after the exact merged SHA
+# has deployed successfully and the public site has passed its health check.
+sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1 || true
 sudo systemctl start hermes-tech-pull-deploy.service
 
 [[ "$(systemctl show hermes-tech-pull-deploy.service -p Result --value)" == 'success' ]] \
@@ -49,9 +53,16 @@ sudo systemctl start hermes-tech-pull-deploy.service
     || fail 'production did not reach the activated main SHA'
 curl --fail --silent --show-error --max-time 20 https://tech.rozkalns.net/ >/dev/null
 
+sudo systemctl enable --now hermes-tech-pull-deploy.timer
+[[ "$(systemctl is-enabled hermes-tech-pull-deploy.timer)" == 'enabled' ]] \
+    || fail 'pull deploy timer is not enabled after successful canary'
+[[ "$(systemctl is-active hermes-tech-pull-deploy.timer)" == 'active' ]] \
+    || fail 'pull deploy timer is not active after successful canary'
+
 printf 'PULL_DEPLOY_ACTIVATION_RESULT=PASS\n'
 printf 'SOURCE_SHA=%s\n' "$HEAD_SHA"
 printf 'PRODUCTION_SHA=%s\n' "$(git -C "$PRIMARY" rev-parse HEAD)"
+printf 'TIMER_ENABLED=%s\n' "$(systemctl is-enabled hermes-tech-pull-deploy.timer)"
 printf 'TIMER_ACTIVE=%s\n' "$(systemctl is-active hermes-tech-pull-deploy.timer)"
 printf 'PUBLIC_SITE=PASS\n'
 printf 'FUTURE_GIT_EMAIL=noreply\n'
