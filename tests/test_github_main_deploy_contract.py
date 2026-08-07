@@ -13,6 +13,7 @@ HELPER = ROOT / "tools" / "pull-deploy" / "release" / "hermes-tech-deploy-main"
 INSTALLER = ROOT / "tools" / "pull-deploy" / "install-pull-deploy.sh"
 ACTIVATOR = ROOT / "tools" / "pull-deploy" / "activate-pull-deploy.sh"
 REMOVER = ROOT / "tools" / "pull-deploy" / "remove-self-hosted-runner.sh"
+RETIRED_RECOVERY = ROOT / "tools" / "runner" / "recover-pending-digest-deadlock.sh"
 SERVICE = ROOT / "ops" / "systemd" / "hermes-tech-pull-deploy.service"
 TIMER = ROOT / "ops" / "systemd" / "hermes-tech-pull-deploy.timer"
 DOC = ROOT / "docs" / "public-repository-hardening.md"
@@ -21,7 +22,6 @@ OLD_RUNNER_PATHS = (
     ROOT / "tools" / "runner" / "activate-github-main-deploy.sh",
     ROOT / "tools" / "runner" / "install-github-main-deploy.sh",
     ROOT / "tools" / "runner" / "install-github-tech-runner.sh",
-    ROOT / "tools" / "runner" / "recover-pending-digest-deadlock.sh",
     ROOT / "tools" / "runner" / "release" / "hermes-tech-deploy-main",
 )
 
@@ -137,6 +137,22 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         )
         self.assertIn("status=${line:0:2}", text)
         self.assertIn("[[ \"$status\" == '??' ]]", text)
+
+    def test_one_time_deadlock_recovery_is_retired_fail_closed(self) -> None:
+        text = read(RETIRED_RECOVERY)
+        subprocess.run(["bash", "-n", str(RETIRED_RECOVERY)], check=True)
+        self.assertIn("one-time 2026-08-07 recovery helper is retired", text)
+        self.assertIn("issue #33", text)
+        self.assertIn("public-repository-hardening.md", text)
+        self.assertIn("exit 1", text)
+        for forbidden in (
+            "sudo ",
+            "git reset",
+            "git push",
+            "digest.py",
+            "systemctl",
+        ):
+            self.assertNotIn(forbidden, text)
 
     def test_installer_timer_and_removal_are_narrow(self) -> None:
         for script in (INSTALLER, ACTIVATOR, REMOVER):
