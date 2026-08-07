@@ -87,6 +87,10 @@ The transition must remain fail-closed:
 9. immediately set fork workflow approval to `all_external_contributors`;
 10. apply and independently verify the prepared `main` rulesets from issue #2.
 
+Runner retirement is retry-safe: after the replacement timer is active and
+production equals exact `origin/main`, a rerun continues local cleanup even if
+the GitHub runner registration was already removed by a previous partial run.
+
 Visibility, runner removal, installed-file changes, and ruleset activation remain
 separately verified operational actions. A code merge alone authorizes none of
 them.
