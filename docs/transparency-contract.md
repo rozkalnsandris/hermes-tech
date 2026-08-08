@@ -12,7 +12,8 @@ the executable implementation.
 | Model identifier | `digest_core.py::DEEPSEEK_MODEL` |
 | Digest item count | `digest_core.py::DIGEST_ITEM_COUNT` |
 | Editorial rules | `editorial/VOICE.md`, `WRITING.md`, `REVIEW.md` |
-| Automatic generation/publish behavior | `run_digests_core.sh` |
+| Automatic generation behavior | `run_digests_core.sh` |
+| Publication rollback/recovery behavior | `publish_core.sh` and `sync_generated_content.sh` |
 | Cross-category and quality gates | `digest_core.py` and `digest_diversity.py` |
 | Production time semantics | `hermes_time.py` and timezone shell adapters |
 | Runtime configuration keys | `.env.example`, `digest_core.py`, `run_digests_core.sh`, and `hermes_runtime.py` |
@@ -35,6 +36,29 @@ pass its executable gates; manual approval is not required for every run.
 
 Do not use `human-supervised`, `human-reviewed before publishing`, or equivalent
 wording without immediately explaining this boundary.
+
+### Publication and recovery
+
+Publication has two distinct recovery phases and public wording must not collapse
+them into a blanket "everything rolls back on any failure" claim.
+
+Before the publication database update is committed, failures restore the
+previous generated content, Open Graph image, and live Hugo files. The database
+update is committed only after the staged Hugo build and live-file deployment
+have succeeded.
+
+After that database commit, the page and database represent a successful live
+publication. Git staging, commit, no-op verification, or push failures are a
+**Git synchronization recovery state**, not a reason to perform a second
+publication mutation. The live files and database remain in place, the command
+returns the dedicated recovery exit code, and staged files or a local
+publication commit are preserved where applicable so synchronization can be
+completed safely.
+
+Public copy may describe the pre-database phase as rollback/atomic recovery, but
+must describe post-database Git failures as pending synchronization/recovery.
+It must not imply that a successful live publication is rolled back merely
+because the later Git synchronization failed.
 
 ### Models and counts
 
@@ -75,4 +99,5 @@ or publication logic changes:
 
 CI must fail on stale fixed source counts, fixed monthly cost claims, incorrect
 full-page ingestion claims, ambiguous per-run human-review claims, unknown
-`.env.example` keys, or model/item-count drift.
+`.env.example` keys, model/item-count drift, or publication-recovery wording
+that contradicts the pre-database rollback / post-database Git-recovery boundary.
