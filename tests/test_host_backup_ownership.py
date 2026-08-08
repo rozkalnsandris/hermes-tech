@@ -36,7 +36,7 @@ class HostBackupOwnershipTests(unittest.TestCase):
     def test_document_points_to_exact_infrastructure_source(self) -> None:
         text = DOC.read_text(encoding="utf-8")
         required = (
-            "rozkalnsandris/RPi5_main",
+            "public\n`rozkalnsandris/RPi5_main` repository",
             "762174f12b72ad512600cfe2fc69bc80a530dadb",
             "RPi5_main` PR #28",
             "ops/backup/source-provenance.json",
@@ -44,6 +44,22 @@ class HostBackupOwnershipTests(unittest.TestCase):
             "36b8223710fd2dbe90b6d69898ffc17c34285da1",
         )
         for marker in required:
+            self.assertIn(marker, text)
+        self.assertNotIn(
+            "canonical reviewed source is the private",
+            text,
+        )
+
+    def test_public_visibility_does_not_weaken_sensitive_data_boundary(self) -> None:
+        text = " ".join(DOC.read_text(encoding="utf-8").split())
+        for marker in (
+            "Repository visibility does not change the security boundary",
+            "credentials",
+            "runtime `.env` values",
+            "backup contents",
+            "keys",
+            "must not be copied into Hermes Tech",
+        ):
             self.assertIn(marker, text)
 
     def test_all_removed_paths_are_documented(self) -> None:
