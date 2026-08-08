@@ -124,6 +124,7 @@ python tools/capture_site_baseline.py "$build_root/public" \
 
 python tools/check_site_images.py "$build_root/public" \
     --root "$ROOT" \
+    --require-no-content-images \
     --require-local-dimensions \
     --require-alt \
     | tee "$build_root/site-images.json"
