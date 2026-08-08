@@ -58,3 +58,6 @@ jobs:
           HERMES_TECH_ROOT: ${{ github.workspace }}
           HERMES_TECH_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash tools/ci.sh
+
+      - name: Real-browser static regression
+        run: python tools/browser_smoke.py --root "$GITHUB_WORKSPACE"
