@@ -4,7 +4,7 @@
   {{ with .Content }}<p class="sub">{{ . | plainify }}</p>{{ end }}
 </section>
 {{ if eq .Kind "section" }}
-  {{ $paginator := .Paginate .Pages.ByDate.Reverse }}
+  {{ $paginator := partial "section-paginator.html" . }}
   {{ range $paginator.Pages }}
     {{ partial "digest-row.html" . }}
   {{ end }}
