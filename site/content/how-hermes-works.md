@@ -32,10 +32,14 @@ one. Every article on this site is labeled as AI-generated.
    repaired within bounded retries. A category that still fails is not
    published; a cross-category conflict blocks the entire publication phase.
 4. **Publish.** Categories that were generated successfully and pass the global
-   gates are published automatically through an atomic Hugo, SQLite, and Git
-   workflow. Publication verifies the exact pushed commit and rolls files,
-   database state, and Git state back on failure. Telegram and healthcheck
-   messages are operational notifications, not approval gates.
+   gates are published automatically. Before the publication database update is
+   committed, a failure restores the previous generated content, Open Graph
+   image, and live Hugo files. Once the live files and database update have both
+   succeeded, that publication is kept live. If the later Git synchronization
+   fails, Hermes reports a recovery state instead of rolling the already-live
+   page and database back; the staged files or local publication commit are
+   preserved so synchronization can be completed safely. Telegram and
+   healthcheck messages are operational notifications, not approval gates.
 
 ## Human supervision
 
