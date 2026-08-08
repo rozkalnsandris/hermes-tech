@@ -167,6 +167,37 @@ def build_report(root: Path, public_dir: Path) -> dict[str, Any]:
     }
 
 
+def print_summary(report: dict[str, Any]) -> None:
+    tracked = report["tracked"]
+    content = report["content_usage"]
+    rendered = report["rendered"]
+    print(
+        "Image contract summary: "
+        f"tracked={tracked['image_files']} "
+        f"raster={tracked['raster_files']} "
+        f"content_raster={tracked['content_raster_count']} "
+        f"markdown={content['markdown_image_count']} "
+        f"inline_content_img_files={content['inline_img_file_count']} "
+        f"rendered={rendered['img_tags']} "
+        f"local_rendered={rendered['local_img_tags']} "
+        f"missing_dimensions={rendered['missing_dimensions_count']} "
+        f"missing_alt={rendered['missing_alt_count']}",
+        file=sys.stderr,
+    )
+    for image in rendered["missing_dimensions"]:
+        print(
+            "MISSING_DIMENSIONS "
+            f"page={image['page']} src={image['src']!r} "
+            f"width={image['width']!r} height={image['height']!r}",
+            file=sys.stderr,
+        )
+    for image in rendered["missing_alt"]:
+        print(
+            f"MISSING_ALT page={image['page']} src={image['src']!r}",
+            file=sys.stderr,
+        )
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Inventory Hermes Tech image surfaces and rendered image safety.")
     parser.add_argument("public_dir", type=Path)
@@ -184,6 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"KĻŪDA: image contract: {exc}", file=sys.stderr)
         return 1
 
+    print_summary(report)
     print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
     if args.require_local_dimensions and report["rendered"]["missing_dimensions_count"]:
         print("KĻŪDA: generated local images without usable width/height", file=sys.stderr)
