@@ -57,7 +57,11 @@ class TemplateStructureTests(unittest.TestCase):
             self.assertNotIn('<a class="log c-', text, path)
 
         list_text = LIST.read_text(encoding="utf-8")
-        self.assertIn('{{ partial "section-paginator.html" . }}', list_text)
+        self.assertIn('partial "section-paginator.html" .', list_text)
+
+        paginator = (PARTIALS / "section-paginator.html").read_text(encoding="utf-8")
+        self.assertEqual(paginator.count(".Paginate"), 1)
+        self.assertIn(".Pages.ByDate.Reverse", paginator)
 
         row = (PARTIALS / "digest-row.html").read_text(encoding="utf-8")
         self.assertIn('<a class="log c-{{ .Section }}"', row)
