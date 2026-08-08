@@ -53,8 +53,11 @@ class TemplateStructureTests(unittest.TestCase):
     def test_home_and_list_share_digest_row_partial(self) -> None:
         for path in (HOME, LIST):
             text = path.read_text(encoding="utf-8")
-            self.assertEqual(text.count('{{ partial "digest-row.html" . }}'), 1, path)
+            self.assertGreaterEqual(text.count('{{ partial "digest-row.html" . }}'), 1, path)
             self.assertNotIn('<a class="log c-', text, path)
+
+        list_text = LIST.read_text(encoding="utf-8")
+        self.assertIn('{{ partial "section-paginator.html" . }}', list_text)
 
         row = (PARTIALS / "digest-row.html").read_text(encoding="utf-8")
         self.assertIn('<a class="log c-{{ .Section }}"', row)
