@@ -83,6 +83,14 @@ def _install_diversity_contracts() -> None:
     install_diversity_contracts(_core)
 
 
+def _install_notification_contracts() -> None:
+    if not hasattr(_core, "send_telegram"):
+        return
+    from digest_notifications import install_notification_contracts
+
+    install_notification_contracts(_core)
+
+
 try:
     PATHS = RuntimePaths.from_env()
 except RuntimeConfigError as exc:
@@ -97,6 +105,7 @@ if hasattr(_core, "write_routing_manifest"):
 _install_classify_resilience_contracts()
 _install_digest_response_resilience_contracts()
 _install_diversity_contracts()
+_install_notification_contracts()
 _export_core_api()
 
 
