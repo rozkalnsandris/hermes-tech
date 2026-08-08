@@ -1,0 +1,67 @@
+.hero{
+  padding:64px 0 30px;position:relative;overflow:hidden;isolation:isolate
+}
+.hero>*{position:relative;z-index:1}
+.hero::after{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+  right:-58px;top:50%;width:min(43vw,360px);aspect-ratio:768/568;
+  transform:translateY(-50%);opacity:.050
+}
+.hero h1{
+  margin:0 0 14px;font-weight:800;letter-spacing:-.035em;line-height:1.02;
+  font-size:clamp(2.4rem,7vw,4.4rem);
+}
+.hero h1 .dim{color:var(--hero-dim)}
+.hero p.sub{max-width:56ch;color:var(--muted);font-size:1.05rem;margin:0}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+.cta{display:inline-flex;align-items:center;gap:9px;padding:9px 13px;border-radius:8px;
+  font-family:var(--mono);font-size:.78rem;font-weight:600;letter-spacing:.02em;
+  border:1px solid var(--line2);transition:transform .15s,border-color .15s,background .15s}
+.cta:hover{transform:translateY(-1px)}
+.cta-primary{color:var(--text);border-color:rgba(77,163,255,.5);
+  background:rgba(77,163,255,.11)}
+.cta-primary:hover{border-color:var(--devops);background:rgba(77,163,255,.17)}
+.cta-secondary{color:var(--muted);background:var(--bg1)}
+.cta-secondary:hover{color:var(--text);border-color:var(--line2)}
+.pipe{
+  margin:34px 0 0;padding:13px 16px;border:1px solid var(--line);border-radius:10px;
+  background:linear-gradient(180deg,var(--panel),var(--bg1));
+  font-family:var(--mono);font-size:.78rem;color:var(--muted);
+  display:flex;gap:10px;flex-wrap:wrap;align-items:center;letter-spacing:.02em;
+}
+.pipe .arr{color:var(--faint)}
+.pipe .hu{color:var(--live)}
+.pipe .node{white-space:nowrap}
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:26px 0 8px}
+.tile{border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  padding:16px 16px 13px;transition:border-color .2s}
+.tile:hover{border-color:var(--line2)}
+.tile b{display:block;font-family:var(--mono);font-size:1.5rem;font-weight:600;
+  letter-spacing:-.02em}
+.tile span{display:block;font-family:var(--mono);font-size:.68rem;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.09em;margin-top:4px}
+.feedhead{display:flex;align-items:baseline;gap:12px;margin:46px 0 10px;scroll-margin-top:88px}
+.feedhead h2{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
+.feedhead .cmd{font-family:var(--mono);font-size:.72rem;color:var(--faint)}
+.log{
+  display:grid;grid-template-columns:auto auto 1fr;gap:14px;align-items:baseline;
+  padding:13px 16px;margin:0 -16px;border-radius:10px;
+  border-left:2px solid transparent;
+  transition:background .15s,border-color .15s,transform .15s;
+}
+.log:hover{background:var(--panel);transform:translateX(3px)}
+.log .ts{font-family:var(--mono);font-size:.75rem;color:var(--faint);white-space:nowrap}
+.log .tag{font-family:var(--mono);font-size:.66rem;font-weight:700;letter-spacing:.08em;
+  padding:2px 7px;border-radius:5px;white-space:nowrap}
+.log .copy{min-width:0;display:flex;flex-direction:column;gap:2px}
+.log .ttl{font-weight:600;letter-spacing:-.01em;line-height:1.45}
+.log .topics{font-family:var(--mono);font-size:.69rem;color:var(--faint);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.45}
+.log.c-digest:hover{border-left-color:var(--devops)}
+.log.c-ai:hover{border-left-color:var(--ai)}
+.log.c-agents:hover{border-left-color:var(--agents)}
+.about{margin:44px 0 0;padding:22px 24px;border:1px solid var(--line);
+  border-radius:12px;background:var(--bg1);color:var(--muted)}
+.about p{margin:.5em 0}
+.about a{color:var(--devops);border-bottom:1px solid rgba(77,163,255,.3)}
