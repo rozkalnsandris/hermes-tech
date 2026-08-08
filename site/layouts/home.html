@@ -33,14 +33,7 @@
   <span class="cmd">$ tail -f hermes.log</span>
 </div>
 {{ range first 15 (where site.RegularPages "Section" "in" (slice "digest" "ai" "agents")).ByDate.Reverse }}
-<a class="log c-{{ .Section }}" href="{{ .Permalink }}">
-  <span class="ts">{{ .Date.Format "2006-01-02" }}</span>
-  <span class="tag tag-{{ .Section }}">{{ if eq .Section "digest" }}DEVOPS{{ else if eq .Section "ai" }}AI{{ else }}AGENTS{{ end }}</span>
-  <span class="copy">
-    <span class="ttl">{{ replaceRE " — .*$" "" .Title }}</span>
-    {{ with .Params.topics }}<span class="topics">{{ delimit . " · " }}</span>{{ end }}
-  </span>
-</a>
+{{ partial "digest-row.html" . }}
 {{ end }}
 
 <div class="about">

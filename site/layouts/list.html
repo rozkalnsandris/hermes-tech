@@ -1,0 +1,9 @@
+{{ define "main" }}
+<section class="hero">
+  <h1>{{ .Title }}</h1>
+  {{ with .Content }}<p class="sub">{{ . | plainify }}</p>{{ end }}
+</section>
+{{ range .Pages.ByDate.Reverse }}
+{{ partial "digest-row.html" . }}
+{{ end }}
+{{ end }}
