@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Hermes Tech's pinned toolchain declarations without dependencies."""
+"""Validate Hermes Tech's pinned and hash-verified toolchain declarations."""
 from __future__ import annotations
 
 import re
@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN_RE = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>[^\s;]+)$")
+HASH_RE = re.compile(r"^--hash=sha256:(?P<digest>[0-9a-f]{64})$")
 
 
 def canonical_name(value: str) -> str:
@@ -22,15 +23,50 @@ def exact_pin(value: str, source: str) -> tuple[str, str]:
     return canonical_name(match.group("name")), match.group("version")
 
 
-def read_lock(path: Path) -> dict[str, str]:
-    pins: dict[str, str] = {}
+def logical_requirements(path: Path) -> list[tuple[int, str]]:
+    records: list[tuple[int, str]] = []
+    start = 0
+    parts: list[str] = []
     for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        name, version = exact_pin(line, f"{path.name}:{number}")
+        if not parts:
+            start = number
+        continued = line.endswith("\\")
+        if continued:
+            line = line[:-1].rstrip()
+        parts.append(line)
+        if not continued:
+            records.append((start, " ".join(parts)))
+            parts = []
+    if parts:
+        raise ValueError(f"{path.name}:{start}: unterminated line continuation")
+    return records
+
+
+def read_lock(path: Path) -> dict[str, str]:
+    pins: dict[str, str] = {}
+    for number, record in logical_requirements(path):
+        tokens = record.split()
+        if not tokens:
+            continue
+        name, version = exact_pin(tokens[0], f"{path.name}:{number}")
         if name in pins:
             raise ValueError(f"{path.name}:{number}: duplicate dependency {name}")
+        hashes: set[str] = set()
+        for token in tokens[1:]:
+            match = HASH_RE.fullmatch(token)
+            if not match:
+                raise ValueError(
+                    f"{path.name}:{number}: unsupported requirement option {token!r}"
+                )
+            digest = match.group("digest")
+            if digest in hashes:
+                raise ValueError(f"{path.name}:{number}: duplicate sha256 hash")
+            hashes.add(digest)
+        if not hashes:
+            raise ValueError(f"{path.name}:{number}: dependency has no sha256 hash")
         pins[name] = version
     if not pins:
         raise ValueError(f"{path.name}: no dependency pins found")
@@ -91,7 +127,7 @@ def main() -> int:
 
     print(
         f"Dependency contract OK: Python {python_file}, Hugo {hermes['hugo']}, "
-        f"{len(bootstrap) + len(runtime)} exact Python pins"
+        f"{len(bootstrap) + len(runtime)} exact hashed Python pins"
     )
     return 0
 
