@@ -10,7 +10,7 @@ enableRobotsTXT = true
   path = "page"
 
 [params]
-  description = "AI Platform Engineer. Exploring DevOps, Cloud, Kubernetes and AI infrastructure. Filtering the noise. Testing the ideas. Sharing what matters."
+  description = "A self-hosted, openly AI-generated technology digest for DevOps, AI, and agent engineering."
   tagline = "The technology is not the story. The engineering behind it is."
 
 [markup.goldmark.renderer]
