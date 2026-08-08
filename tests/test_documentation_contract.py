@@ -13,9 +13,10 @@ TRANSPARENCY = REPO / "docs" / "transparency-contract.md"
 HOW = REPO / "site" / "content" / "how-hermes-works.md"
 LLMS = REPO / "site" / "static" / "llms.txt"
 FOOTER = REPO / "site" / "layouts" / "_default" / "baseof.html"
+INDEX = REPO / "site" / "layouts" / "index.html"
 DIGEST_CORE = REPO / "digest_core.py"
 
-PUBLIC_SURFACES = (HOW, LLMS, FOOTER)
+PUBLIC_SURFACES = (HOW, LLMS, FOOTER, INDEX)
 EXPECTED_DOTENV_KEYS = {
     "DEEPSEEK_API_KEY",
     "TELEGRAM_BOT_TOKEN",
@@ -153,6 +154,7 @@ class DocumentationContractTests(unittest.TestCase):
             "~50 RSS sources",
             "under €1 per month",
             "under 1 EUR/month",
+            "cron 07:00 UTC",
         )
         fixed_source_count = re.compile(
             r"(?i)(?:about|approximately|~)?\s*\d+\s+RSS sources"
@@ -161,6 +163,14 @@ class DocumentationContractTests(unittest.TestCase):
             r"(?i)(?:under|less than|about|approximately|~)\s*"
             r"[€$]?\d+(?:[.,]\d+)?\s*(?:EUR|euro|€)?\s*/?\s*month"
         )
+        fixed_source_count_markup = re.compile(
+            r"(?is)<b>\s*\d+\s*</b>\s*<span>\s*rss sources\s*</span>"
+        )
+        fixed_cost_markup = re.compile(
+            r"(?is)<b>\s*(?:&lt;|<)?\s*[€$]?\d+(?:[.,]\d+)?\s*</b>\s*"
+            r"<span>\s*cost\s*/\s*month\s*</span>"
+        )
+        fixed_cron_time = re.compile(r"(?i)\bcron\s+\d{1,2}:\d{2}\s+(?:UTC|CET|CEST)\b")
 
         for path in PUBLIC_SURFACES:
             text = path.read_text(encoding="utf-8")
@@ -169,6 +179,9 @@ class DocumentationContractTests(unittest.TestCase):
                 self.assertNotIn(stale.casefold(), lowered, path)
             self.assertIsNone(fixed_source_count.search(text), path)
             self.assertIsNone(fixed_cost.search(text), path)
+            self.assertIsNone(fixed_source_count_markup.search(text), path)
+            self.assertIsNone(fixed_cost_markup.search(text), path)
+            self.assertIsNone(fixed_cron_time.search(text), path)
 
     def test_transparency_contract_names_sources_and_update_path(self) -> None:
         text = TRANSPARENCY.read_text(encoding="utf-8")
