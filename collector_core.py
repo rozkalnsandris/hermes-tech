@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import re
-import socket
 import sqlite3
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import feedparser
 
 from hermes_db import SchemaError, ensure_current_schema
+from rss_transport import fetch_feed
 
 BASE = Path.home() / "hermes-tech"
 DB = BASE / "data" / "hermes.db"
@@ -20,8 +21,6 @@ FEEDS = BASE / "feeds.txt"
 LOG = BASE / "logs" / "collector.log"
 
 MAX_CONTENT = 40000
-
-feedparser.USER_AGENT = "HermesTech/1.0 (+https://tech.rozkalns.net)"
 
 
 def log(msg: str) -> None:
@@ -88,9 +87,6 @@ def entry_published(entry) -> str:
     return ""
 
 
-socket.setdefaulttimeout(30)
-
-
 def main() -> int:
     try:
         conn = open_database()
@@ -110,7 +106,8 @@ def main() -> int:
     for name, url, cat in load_feeds():
         conn.execute("INSERT OR IGNORE INTO sources(name) VALUES (?)", (name,))
         try:
-            parsed = feedparser.parse(url)
+            fetched = fetch_feed(url)
+            parsed = feedparser.parse(fetched.body)
             if parsed.bozo and not parsed.entries:
                 raise RuntimeError(f"bozo: {parsed.bozo_exception}")
             new = 0
@@ -143,9 +140,13 @@ def main() -> int:
             )
             total_new += new
             feeds_ok += 1
+            final_host = urlsplit(fetched.final_url).hostname or "unknown"
+            media_type = fetched.content_type or "unspecified"
             log(
                 f"OK   [{cat}] {name}: +{new} jauni "
-                f"({len(parsed.entries)} feedā)"
+                f"({len(parsed.entries)} feedā); http={fetched.status_code} "
+                f"bytes={len(fetched.body)} redirects={fetched.redirects} "
+                f"type={media_type} host={final_host}"
             )
         except Exception as exc:  # noqa: BLE001
             feeds_failed += 1
