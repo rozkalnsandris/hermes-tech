@@ -30,6 +30,10 @@ _MODULE_DIR = Path(__file__).resolve().parent
 if str(_MODULE_DIR) not in sys.path:
     sys.path.insert(0, str(_MODULE_DIR))
 
+# digest_core.py is a compatibility implementation container, not the supported
+# runtime entrypoint. Runtime contracts below must take ownership before the core
+# API is exported; direct production imports of digest_core are intentionally
+# forbidden by the diversity quarantine regression tests.
 import digest_core as _core
 from hermes_runtime import (
     EXIT_OPERATIONAL,
@@ -81,6 +85,19 @@ def _install_diversity_contracts() -> None:
     from digest_diversity import install_diversity_contracts
 
     install_diversity_contracts(_core)
+
+    # Quarantine the stale compatibility implementation in digest_core.py.
+    # Production must never silently fall back to it: both the candidate filter
+    # and final selected-topic resolver are owned by digest_diversity after the
+    # installer runs. This turns installer drift into an immediate startup
+    # failure instead of a silent selection-semantics change.
+    for name in ("diversity_filter", "_resolve_digest_selected_ids"):
+        installed = getattr(_core, name, None)
+        if not callable(installed) or installed.__module__ != "digest_diversity":
+            raise RuntimeError(
+                "diversity contract installation failed closed: "
+                f"{name} owner={getattr(installed, '__module__', None)!r}"
+            )
 
 
 def _install_notification_contracts() -> None:
