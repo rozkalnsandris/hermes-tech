@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "cache_control": {
+    "fingerprinted_css": "public, max-age=31536000, immutable",
+    "html": "no-cache",
+    "stable_metadata": "no-cache"
+  },
+  "security_headers": {
+    "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; img-src 'self'; style-src 'self'; script-src 'none'; font-src 'none'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; manifest-src 'self'",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Content-Type-Options": "nosniff"
+  },
+  "stable_metadata_paths": [
+    "/index.xml",
+    "/robots.txt",
+    "/llms.txt",
+    "/site-v15.webmanifest"
+  ]
+}
