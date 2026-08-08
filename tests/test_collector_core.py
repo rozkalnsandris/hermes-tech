@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import json
 import sqlite3
 import tempfile
 import time
@@ -64,6 +65,7 @@ class CollectorSchemaStartupTests(unittest.TestCase):
         self.root = Path(self.tmp_obj.name)
         self.db = self.root / "data" / "hermes.db"
         self.log = self.root / "logs" / "collector.log"
+        self.health = self.root / "data" / "source-health.json"
         self.db.parent.mkdir(parents=True)
 
     def load_fixture(self, name: str) -> None:
@@ -78,6 +80,7 @@ class CollectorSchemaStartupTests(unittest.TestCase):
         with (
             patch.object(collector_core, "DB", self.db),
             patch.object(collector_core, "LOG", self.log),
+            patch.object(collector_core, "SOURCE_HEALTH", self.health),
         ):
             self.assertEqual(collector_core.main(), 1)
         self.assertEqual(sha256(self.db.read_bytes()).hexdigest(), before)
@@ -102,6 +105,7 @@ class CollectorMainThresholdTests(unittest.TestCase):
         self.db = self.root / "data" / "hermes.db"
         self.feeds = self.root / "feeds.txt"
         self.log = self.root / "logs" / "collector.log"
+        self.health = self.root / "data" / "source-health.json"
 
     def run_main(
         self,
@@ -130,6 +134,7 @@ class CollectorMainThresholdTests(unittest.TestCase):
             patch.object(collector_core, "DB", self.db),
             patch.object(collector_core, "FEEDS", self.feeds),
             patch.object(collector_core, "LOG", self.log),
+            patch.object(collector_core, "SOURCE_HEALTH", self.health),
             patch.object(collector_core, "fetch_feed", side_effect=fake_fetch),
             patch.object(
                 collector_core.feedparser,
@@ -175,6 +180,9 @@ class CollectorMainThresholdTests(unittest.TestCase):
         ).fetchall()
         self.assertEqual(rows, [("A", 0, 1), ("B", 0, 1)])
         self.assertEqual(hermes_db.user_version(conn), 3)
+        health = json.loads(self.health.read_text(encoding="utf-8"))
+        self.assertEqual(health["sources"]["A"]["consecutive_failures"], 1)
+        self.assertEqual(health["sources"]["B"]["last_status"], "failed")
 
     def test_more_failures_than_successes_fail_closed(self) -> None:
         rc = self.run_main(
@@ -200,6 +208,11 @@ class CollectorMainThresholdTests(unittest.TestCase):
             },
         )
         self.assertEqual(rc, 0)
+        health = json.loads(self.health.read_text(encoding="utf-8"))
+        self.assertEqual(health["sources"]["A"]["last_status"], "ok")
+        self.assertEqual(health["sources"]["A"]["consecutive_failures"], 0)
+        self.assertEqual(health["sources"]["A"]["last_http_status"], 200)
+        self.assertEqual(health["sources"]["B"]["last_status"], "failed")
 
     def test_duplicate_article_link_is_idempotent(self) -> None:
         rc = self.run_main(
