@@ -1,0 +1,17 @@
+<header class="site">
+  <div class="wrap hbar">
+    <a href="/" class="brand" aria-label="Hermes Tech home">
+      <img class="hmark" src="/brand/hermes-tech-wordmark-v15.png"
+           width="1363" height="232" alt="Hermes Tech">
+    </a>
+    <span class="live">live</span>
+    <nav class="site-nav" aria-label="Primary navigation">
+      <a href="/"{{ if .IsHome }} aria-current="page"{{ end }}>home</a>
+      <a href="/digest/" class="n-devops"{{ if eq .Section "digest" }} aria-current="page"{{ end }}>devops</a>
+      <a href="/ai/" class="n-ai"{{ if eq .Section "ai" }} aria-current="page"{{ end }}>ai</a>
+      <a href="/agents/" class="n-agents"{{ if eq .Section "agents" }} aria-current="page"{{ end }}>agents</a>
+      <a href="/how-hermes-works/"{{ if eq .RelPermalink "/how-hermes-works/" }} aria-current="page"{{ end }}>how it works</a>
+      <a href="/impressum/"{{ if eq .RelPermalink "/impressum/" }} aria-current="page"{{ end }}>impressum</a>
+    </nav>
+  </div>
+</header>
