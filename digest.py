@@ -84,7 +84,10 @@ def _install_diversity_contracts() -> None:
 
 
 def _install_notification_contracts() -> None:
-    if not hasattr(_core, "send_telegram"):
+    # Minimal fake cores used by isolated runtime-root tests intentionally do not
+    # carry the real requests transport. A real core does, and must import the
+    # notification contract successfully rather than silently running unpatched.
+    if not hasattr(_core, "send_telegram") or not hasattr(_core, "requests"):
         return
     from digest_notifications import install_notification_contracts
 
