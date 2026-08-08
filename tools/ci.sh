@@ -106,6 +106,13 @@ HUGO_CACHEDIR="$build_root/cache" \
     exit 1
 }
 
+source_revision=${HERMES_TECH_SOURCE_REVISION:-$(git rev-parse HEAD)}
+python tools/capture_site_baseline.py "$build_root/public" \
+    --source-revision "$source_revision" \
+    --hugo-version "$(hugo version)" \
+    --require-zero-scripts \
+    | tee "$build_root/site-baseline.json"
+
 if ! git diff --quiet -- . || ! git diff --cached --quiet -- .; then
     echo "KĻŪDA: CI validācija mainīja tracked failus" >&2
     git status --short >&2
