@@ -1,2 +1,9 @@
-{{ $style := resources.Get "css/site.css" | minify | fingerprint "sha384" }}
+{{ $tokens := resources.Get "css/tokens.css" }}
+{{ $base := resources.Get "css/base.css" }}
+{{ $layout := resources.Get "css/layout.css" }}
+{{ $components := resources.Get "css/components.css" }}
+{{ $home := resources.Get "css/home.css" }}
+{{ $article := resources.Get "css/article.css" }}
+{{ $responsive := resources.Get "css/responsive.css" }}
+{{ $style := slice $tokens $base $layout $components $home $article $responsive | resources.Concat "css/site.css" | minify | fingerprint "sha384" }}
 <link rel="stylesheet" href="{{ $style.RelPermalink }}" integrity="{{ $style.Data.Integrity }}" crossorigin="anonymous">

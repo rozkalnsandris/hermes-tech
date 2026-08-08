@@ -1,0 +1,8 @@
+:root{
+  --bg0:#03101f;--bg1:#07182a;--panel:#0a1e33;--panel2:#102941;
+  --line:rgba(72,198,255,.10);--line2:rgba(110,211,255,.18);
+  --text:#f4f7fb;--muted:#9bb0c5;--faint:#71869d;--hero-dim:#7898b8;
+  --devops:#22c7ff;--ai:#91a7ff;--agents:#ffb454;--live:#4ade80;
+  --mono:ui-monospace,"JetBrains Mono","SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+}

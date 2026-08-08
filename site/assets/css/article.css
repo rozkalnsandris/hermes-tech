@@ -1,0 +1,47 @@
+article{
+  margin-top:44px;position:relative;overflow:hidden;isolation:isolate
+}
+article>*{position:relative;z-index:1}
+article::after{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+  right:-130px;top:92px;width:380px;aspect-ratio:768/568;opacity:.025
+}
+.metabar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+  font-family:var(--mono);font-size:.72rem;color:var(--faint);
+  letter-spacing:.05em;margin:0 0 18px}
+.metabar .ai-note{color:var(--muted)}
+article h1.title{font-size:clamp(1.7rem,4.6vw,2.7rem);font-weight:800;
+  letter-spacing:-.03em;line-height:1.12;margin:0 0 30px}
+.prose{max-width:68ch;font-size:1.05rem;line-height:1.78}
+.prose p{margin:.85em 0}
+.prose strong{color:var(--text)}
+.prose h3{font-size:1.12rem;font-weight:700;letter-spacing:-.015em;line-height:1.4;
+  margin:0 0 .5em;padding-top:1.9em;border-top:1px solid var(--line)}
+.prose h3:first-of-type{border-top:0;padding-top:.4em}
+.prose a{border-bottom:1px solid var(--line2)}
+body.sec-digest .prose a{color:var(--devops)}
+body.sec-ai .prose a{color:var(--ai)}
+body.sec-agents .prose a{color:var(--agents)}
+body.sec-none .prose a{color:var(--devops)}
+.prose blockquote{
+  margin:1em 0;padding:7px 18px 7px 50px;color:var(--muted);
+  font-style:normal;border-left:2px solid var(--line2);
+  background:linear-gradient(90deg,rgba(255,255,255,.03),transparent 70%);
+  border-radius:0 8px 8px 0;position:relative
+}
+.prose blockquote p{margin:.2em 0}
+body.sec-digest .prose blockquote{border-left-color:var(--devops)}
+body.sec-ai .prose blockquote{border-left-color:var(--ai)}
+body.sec-agents .prose blockquote{border-left-color:var(--agents)}
+.prose code{font-family:var(--mono);font-size:.88em;background:var(--panel2);
+  padding:1px 6px;border-radius:5px}
+.prose pre{background:var(--panel);border:1px solid var(--line);padding:14px;
+  border-radius:10px;overflow-x:auto}
+.prose blockquote::before{
+  content:"";position:absolute;left:15px;top:12px;width:21px;height:21px;
+  background:url("/brand/hermes-tech-mark-v15.png") center/contain no-repeat;
+  opacity:.88
+}
+.prose hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+.prose img{max-width:100%;border-radius:10px}
