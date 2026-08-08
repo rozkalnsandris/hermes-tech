@@ -1,14 +1,41 @@
 <p align="center">
-  <img src="assets/branding/readme-banner.jpg" alt="Hermes Tech project banner" width="960">
+  <img src="assets/branding/project-logo.svg" alt="Hermes Tech winged H logo" width="128" height="128">
 </p>
 
-# Hermes Tech
+<h1 align="center">Hermes Tech</h1>
 
-Hermes Tech is a self-hosted, openly AI-generated technology digest covering
-DevOps, AI, and AI-agent engineering. A Python pipeline collects configured RSS
-feeds, stores feed-provided text in SQLite, routes related articles into one
-canonical topic, generates three daily digests, validates them, and publishes a
-Hugo site.
+<p align="center">
+  <strong>A self-hosted, openly AI-generated technology digest for DevOps, AI, and agent engineering.</strong>
+</p>
+
+<p align="center">
+  <a href="https://tech.rozkalns.net/">Live site</a>
+  ·
+  <a href="https://tech.rozkalns.net/how-hermes-works/">How Hermes Works</a>
+  ·
+  <a href="docs/transparency-contract.md">Transparency</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rozkalnsandris/hermes-tech/actions/workflows/ci.yml">
+    <img src="https://github.com/rozkalnsandris/hermes-tech/actions/workflows/ci.yml/badge.svg?branch=main" alt="Hermes Tech CI status">
+  </a>
+</p>
+
+> **The technology is not the story. The engineering behind it is.**
+
+Hermes Tech turns configured RSS feeds into a transparent daily technology
+publication. A Python pipeline stores feed-provided text in SQLite, clusters
+related reporting into canonical topics, uses AI to classify, generate, and
+validate three category digests, then publishes a static Hugo site with RSS and
+Open Graph cards.
+
+| | |
+|---|---|
+| **Coverage** | DevOps · AI · AI agents |
+| **Stack** | Python · SQLite · Hugo · Bash · GitHub Actions |
+| **Publishing** | Static site · RSS · Open Graph cards |
+| **Principles** | openly AI-generated · source-bounded · fail-closed · self-hosted |
 
 The project is operated by Andris Rožkalns. Repository changes are reviewed
 through GitHub; a successful production digest may publish automatically after
@@ -74,7 +101,7 @@ active editorial source of truth is `editorial/VOICE.md`,
 - Python **3.11.9** from `.python-version`;
 - exact Python packages from `requirements-bootstrap.txt`, `requirements.txt`,
   and `requirements-dev.txt`;
-- Hugo Extended **0.111.3**, installed and checksum-verified by
+- Hugo Extended **0.164.0**, installed and checksum-verified by
   `tools/install_hugo.sh`;
 - Bash, Git, rsync, ShellCheck, and standard Unix tools.
 
