@@ -50,8 +50,8 @@ def main() -> int:
         )
     if project.get("requires-python") != ">=3.11,<3.12":
         raise ValueError("pyproject requires-python must remain >=3.11,<3.12")
-    if hermes.get("hugo") != "0.111.3":
-        raise ValueError("supported Hugo version must remain exactly 0.111.3")
+    if hermes.get("hugo") != "0.164.0":
+        raise ValueError("supported Hugo version must remain exactly 0.164.0")
 
     bootstrap = read_lock(ROOT / "requirements-bootstrap.txt")
     expected_bootstrap = {
