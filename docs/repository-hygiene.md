@@ -56,12 +56,17 @@ ignored.
 ## Host-wide backup ownership
 
 The encrypted Raspberry Pi host backup is infrastructure, not a Hermes Tech
-application component. Its canonical reviewed source is the private
+application component. Its canonical reviewed source is the public
 `rozkalnsandris/RPi5_main` repository at ownership-adoption commit:
 
 ```text
 762174f12b72ad512600cfe2fc69bc80a530dadb
 ```
+
+Repository visibility does not change the security boundary: credentials,
+private host coordinates, runtime `.env` values, backup contents, keys, and
+other sensitive deployment evidence must not be copied into Hermes Tech or
+published merely because the infrastructure source repository is public.
 
 The transfer was reviewed in `RPi5_main` PR #28. Machine-readable source blob
 and SHA-256 bindings are stored there at:
