@@ -56,4 +56,5 @@ jobs:
       - name: Validate repository
         env:
           HERMES_TECH_ROOT: ${{ github.workspace }}
+          HERMES_TECH_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash tools/ci.sh
