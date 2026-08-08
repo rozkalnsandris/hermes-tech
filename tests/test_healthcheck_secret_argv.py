@@ -94,11 +94,12 @@ class HealthcheckArgvTests(unittest.TestCase):
             f'url = "{FAKE_URL}/start"\n',
         )
 
-    def test_source_has_no_direct_healthcheck_url_argument(self) -> None:
+    def test_source_uses_stdin_config_instead_of_direct_curl_url(self) -> None:
         function = extract_shell_function("ping_healthcheck")
         self.assertIn("curl --disable --config -", function)
-        self.assertNotIn('"$url$suffix"', function)
-        self.assertNotIn('"${url}${suffix}"', function)
+        self.assertIn('<<<"url = \\"$escaped\\""', function)
+        self.assertNotIn('curl --fail --silent --show-error', function)
+        self.assertNotIn('"$url$suffix" >/dev/null', function)
 
 
 if __name__ == "__main__":
