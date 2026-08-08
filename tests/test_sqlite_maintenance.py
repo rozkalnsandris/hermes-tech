@@ -132,7 +132,7 @@ class SqliteMaintenanceReportTests(unittest.TestCase):
         self.assertEqual(sqlite_maintenance.ACTIVE_INPUT_HOURS, digest_core.FETCH_HOURS)
 
     def test_documented_policy_keeps_mutation_behind_separate_gate(self) -> None:
-        text = DOC.read_text(encoding="utf-8")
+        text = " ".join(DOC.read_text(encoding="utf-8").split())
         required = (
             "retains article rows indefinitely",
             "There is no automatic row pruning",
