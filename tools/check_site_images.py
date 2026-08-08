@@ -204,6 +204,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--require-local-dimensions", action="store_true")
     parser.add_argument("--require-alt", action="store_true")
+    parser.add_argument(
+        "--require-no-content-images",
+        action="store_true",
+        help="Fail if tracked content introduces raster files, Markdown images, or inline img tags before a reviewed content-image pipeline exists.",
+    )
     return parser.parse_args(argv)
 
 
@@ -217,6 +222,19 @@ def main(argv: list[str] | None = None) -> int:
 
     print_summary(report)
     print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False))
+    if args.require_no_content_images:
+        content = report["content_usage"]
+        tracked = report["tracked"]
+        if (
+            tracked["content_raster_count"]
+            or content["markdown_image_count"]
+            or content["inline_img_file_count"]
+        ):
+            print(
+                "KĻŪDA: content image usage introduced before a reviewed Markdown/page-resource image pipeline",
+                file=sys.stderr,
+            )
+            return 4
     if args.require_local_dimensions and report["rendered"]["missing_dimensions_count"]:
         print("KĻŪDA: generated local images without usable width/height", file=sys.stderr)
         return 2
