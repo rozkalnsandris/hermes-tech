@@ -9,6 +9,7 @@ BASE="${HERMES_TECH_ROOT:-$HOME/hermes-tech}"
     echo "KĻŪDA: HERMES_TECH_ROOT jābūt absolūtam ceļam" >&2
     exit 2
 }
+export HERMES_TECH_ROOT="$BASE"
 PYTHON="$BASE/venv/bin/python"
 
 resolve_runtime_file() {
@@ -39,4 +40,40 @@ HERMES_TIME_PY=$(resolve_runtime_file hermes_time.py)
 export HERMES_TIME_PY
 
 PATCHED=$("$PYTHON" "$ADAPTER" digest-runner "$CORE") || exit $?
-exec bash -c "$PATCHED" "$CORE" "$@"
+
+# Preserve the lightweight check path exactly and do not emit operational
+# Telegram alerts for an explicitly requested local --check invocation.
+if (( $# > 0 )); then
+    exec bash -c "$PATCHED" "$CORE" "$@"
+fi
+
+# Full scheduled runs can fail before run_digests_core.sh reaches its normal
+# Telegram summary block (for example, during global classification). Remember
+# the current log boundary so a post-run notifier can inspect only this run.
+LOG_FILE="$BASE/logs/digest-cron.log"
+if [[ -f "$LOG_FILE" ]]; then
+    LOG_START_SIZE=$(stat -c '%s' "$LOG_FILE" 2>/dev/null || printf '0')
+else
+    LOG_START_SIZE=0
+fi
+
+set +e
+bash -c "$PATCHED" "$CORE"
+rc=$?
+set -e
+
+if (( rc != 0 )); then
+    if NOTIFIER=$(resolve_runtime_file tools/notify_pipeline_failure.py); then
+        set +e
+        "$PYTHON" "$NOTIFIER" "$BASE" "$LOG_FILE" "$LOG_START_SIZE" "$rc"
+        notify_rc=$?
+        set -e
+        if (( notify_rc != 0 )); then
+            echo "BRĪDINĀJUMS: agrīno Telegram kļūdas paziņojumu neizdevās nosūtīt (rc=$notify_rc)" >&2
+        fi
+    else
+        echo "BRĪDINĀJUMS: nav agrīnā Telegram kļūdas notifiera" >&2
+    fi
+fi
+
+exit "$rc"
