@@ -1,0 +1,5 @@
+.tag-digest{color:var(--devops);background:rgba(77,163,255,.12)}
+.tag-ai{color:var(--ai);background:rgba(192,132,252,.12)}
+.tag-agents{color:var(--agents);background:rgba(255,180,84,.13)}
+.ht-pipeline-figure-v19{margin:18px 0 10px;max-width:980px}
+.ht-pipeline-figure-v19 img{display:block;width:100%;height:auto;border:0;background:transparent}
