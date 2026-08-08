@@ -99,6 +99,8 @@ class TemplateStructureTests(unittest.TestCase):
 
             home = (destination / "index.html").read_text(encoding="utf-8")
             digest = (destination / "digest" / "index.html").read_text(encoding="utf-8")
+            ai = (destination / "ai" / "index.html").read_text(encoding="utf-8")
+            agents = (destination / "agents" / "index.html").read_text(encoding="utf-8")
             how = (destination / "how-hermes-works" / "index.html").read_text(encoding="utf-8")
             article_pages = sorted((destination / "digest").glob("*/index.html"))
             self.assertTrue(article_pages, "Hugo build produced no digest article")
@@ -110,6 +112,25 @@ class TemplateStructureTests(unittest.TestCase):
                 self.assertEqual(html.count('<footer class="site">'), 1)
                 self.assertRegex(html, r'<link rel="canonical" href="https://tech\.rozkalns\.net/[^\"]*">')
                 self.assertIn('<nav class="site-nav" aria-label="Primary navigation">', html)
+
+            fallback = "A self-hosted, openly AI-generated technology digest for DevOps, AI, and agent engineering."
+            stale = "AI Platform Engineer. Exploring DevOps"
+            for html in (home, how):
+                self.assertIn(f'<meta name="description" content="{fallback}">', html)
+                self.assertIn(f'<meta property="og:description" content="{fallback}">', html)
+                self.assertIn(f'<meta name="twitter:description" content="{fallback}">', html)
+                self.assertNotIn(stale, html)
+
+            section_descriptions = {
+                digest: "Daily DevOps, cloud, and infrastructure digest selected and written by the openly AI-generated Hermes Tech pipeline.",
+                ai: "Daily AI digest covering models, pricing, limits, and platform changes, selected and written by the openly AI-generated Hermes Tech pipeline.",
+                agents: "Daily AI agent engineering digest covering frameworks, tooling, and what teams are actually running, selected and written by Hermes Tech.",
+            }
+            for html, description in section_descriptions.items():
+                self.assertIn(f'<meta name="description" content="{description}">', html)
+                self.assertIn(f'<meta property="og:description" content="{description}">', html)
+                self.assertIn(f'<meta name="twitter:description" content="{description}">', html)
+                self.assertNotIn(stale, html)
 
             self.assertIn('<a href="/" aria-current="page">home</a>', home)
             self.assertIn(
