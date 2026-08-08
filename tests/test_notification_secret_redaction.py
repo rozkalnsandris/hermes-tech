@@ -9,8 +9,8 @@ import requests
 from digest_notifications import install_notification_contracts
 from hermes_secrets import REDACTED, redact_secret_text
 
-FAKE_TOKEN = "123456789:AAFakeHermesAuditToken_DO_NOT_USE"
-FAKE_CHAT_ID = "-1009876543210"
+FAKE_TOKEN = "fake-hermes-audit-token-not-a-real-telegram-credential"
+FAKE_CHAT_ID = "fake-chat-id-not-a-real-chat"
 
 
 class RaisingRequests:
