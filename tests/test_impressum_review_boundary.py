@@ -33,17 +33,20 @@ class ImpressumReviewBoundaryTests(unittest.TestCase):
         self.assertIn("als KI-generiert gekennzeichnet", text)
 
     def test_public_surfaces_share_the_same_manual_approval_boundary(self) -> None:
+        how = normalized(HOW)
+        llms = normalized(LLMS)
+        readme = normalized(README)
         self.assertIn(
             "does **not** require Andris to approve every digest",
-            HOW.read_text(encoding="utf-8"),
+            how,
         )
         self.assertIn(
             "Manual approval is not required for every run",
-            LLMS.read_text(encoding="utf-8"),
+            llms,
         )
         self.assertIn(
             "does not require a separate human approval for every run",
-            README.read_text(encoding="utf-8"),
+            readme,
         )
 
 
