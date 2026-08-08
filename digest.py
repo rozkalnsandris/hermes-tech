@@ -56,6 +56,14 @@ def _export_core_api() -> None:
         globals()[name] = getattr(_core, name)
 
 
+def _install_classify_resilience_contracts() -> None:
+    if not hasattr(_core, "classify_batch"):
+        return
+    from digest_classify_resilience import install_classify_resilience_contracts
+
+    install_classify_resilience_contracts(_core)
+
+
 def _install_diversity_contracts() -> None:
     # Minimal fake cores used by isolated runtime-root tests intentionally do not
     # implement digest selection. Real Hermes cores do, and must load the
@@ -78,6 +86,7 @@ if hasattr(_core, "write_routing_manifest"):
     from hermes_time import install_digest_time_contracts
 
     install_digest_time_contracts(_core)
+_install_classify_resilience_contracts()
 _install_diversity_contracts()
 _export_core_api()
 
