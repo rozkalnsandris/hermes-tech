@@ -3,3 +3,11 @@
 .tag-agents{color:var(--agents);background:rgba(255,180,84,.13)}
 .ht-pipeline-figure-v19{margin:18px 0 10px;max-width:980px}
 .ht-pipeline-figure-v19 img{display:block;width:100%;height:auto;border:0;background:transparent}
+.archive-pagination{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;
+  margin:28px 0 0;padding:14px 0;border-top:1px solid var(--line);font-family:var(--mono);font-size:.75rem}
+.archive-pagination .pager-edge{min-width:0}
+.archive-pagination .pager-older{text-align:right}
+.archive-pagination a{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:6px 9px;
+  border:1px solid var(--line);border-radius:7px;color:var(--muted)}
+.archive-pagination a:hover{color:var(--text);border-color:var(--line2);background:var(--panel)}
+.archive-pagination .pager-count{color:var(--faint);white-space:nowrap}
