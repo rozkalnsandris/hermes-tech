@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -10,8 +11,13 @@ import digest_classify_resilience as resilience
 class ClassifyResilienceTests(unittest.TestCase):
     def make_core(self, classify):
         logs: list[str] = []
+
+        def base_prompt(articles, known_events=None):
+            del known_events
+            return "BASE JSON PROMPT\n" + json.dumps(articles, ensure_ascii=False)
+
         core = SimpleNamespace(
-            build_classify_user_prompt=lambda articles, known_events=None: "BASE JSON PROMPT",
+            build_classify_user_prompt=base_prompt,
             classify_batch=classify,
             log=logs.append,
         )
@@ -29,6 +35,8 @@ class ClassifyResilienceTests(unittest.TestCase):
         self.assertIn("[101, 202]", prompt)
         self.assertIn("Never invent, infer, renumber", prompt)
         self.assertIn("best_source_ids MUST also be a subset", prompt)
+        self.assertIn(resilience.ARTICLE_DATA_BEGIN, prompt)
+        self.assertIn(resilience.ARTICLE_DATA_END, prompt)
 
     def test_foreign_article_id_retries_same_batch_and_then_succeeds(self) -> None:
         calls = 0
