@@ -1,5 +1,5 @@
 baseURL = "https://tech.rozkalns.net/"
-languageCode = "en"
+locale = "en"
 title = "Hermes Tech"
 timeZone = "Europe/Berlin"
 enableRobotsTXT = true

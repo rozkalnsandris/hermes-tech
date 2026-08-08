@@ -4,7 +4,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
-readonly HUGO_VERSION=0.111.3
+readonly HUGO_VERSION=0.164.0
 DEST_DIR=${1:-"$HOME/.local/bin"}
 
 for command_name in curl tar sha256sum install mktemp uname awk; do
