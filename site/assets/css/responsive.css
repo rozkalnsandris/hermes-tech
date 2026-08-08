@@ -1,6 +1,10 @@
 @media(max-width:480px){
   .hero-actions{flex-direction:column}
   .cta{justify-content:center}
+  .archive-pagination{grid-template-columns:1fr 1fr;gap:8px}
+  .archive-pagination .pager-count{grid-column:1/-1;grid-row:1;text-align:center}
+  .archive-pagination .pager-newer{grid-column:1;grid-row:2}
+  .archive-pagination .pager-older{grid-column:2;grid-row:2}
 }
 @media(max-width:640px){
   .bento{grid-template-columns:repeat(2,1fr)}
