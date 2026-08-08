@@ -12,8 +12,8 @@ ENV_EXAMPLE = REPO / ".env.example"
 TRANSPARENCY = REPO / "docs" / "transparency-contract.md"
 HOW = REPO / "site" / "content" / "how-hermes-works.md"
 LLMS = REPO / "site" / "static" / "llms.txt"
-FOOTER = REPO / "site" / "layouts" / "_default" / "baseof.html"
-INDEX = REPO / "site" / "layouts" / "index.html"
+FOOTER = REPO / "site" / "layouts" / "_partials" / "footer.html"
+INDEX = REPO / "site" / "layouts" / "home.html"
 DIGEST_CORE = REPO / "digest_core.py"
 
 PUBLIC_SURFACES = (HOW, LLMS, FOOTER, INDEX)
