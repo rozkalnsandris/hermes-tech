@@ -122,6 +122,13 @@ python tools/capture_site_baseline.py "$build_root/public" \
     --require-zero-scripts \
     | tee "$build_root/site-baseline.json"
 
+python tools/check_site_images.py "$build_root/public" \
+    --root "$ROOT" \
+    --require-no-content-images \
+    --require-local-dimensions \
+    --require-alt \
+    | tee "$build_root/site-images.json"
+
 if ! git diff --quiet -- . || ! git diff --cached --quiet -- .; then
     echo "KĻŪDA: CI validācija mainīja tracked failus" >&2
     git status --short >&2
