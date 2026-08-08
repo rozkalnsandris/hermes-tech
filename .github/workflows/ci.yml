@@ -37,35 +37,6 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      - name: Probe cross-platform requirement hashes
-        run: |
-          set -euo pipefail
-          root="$RUNNER_TEMP/hermes-hash-probe"
-          mkdir -p "$root/native" "$root/arm17" "$root/arm28" "$root/sdist"
-          specs=(
-            'pip==26.1.2'
-            'setuptools==83.0.0'
-            'certifi==2026.7.22'
-            'charset-normalizer==3.4.9'
-            'feedparser==6.0.12'
-            'idna==3.18'
-            'Pillow==12.3.0'
-            'requests==2.34.2'
-            'sgmllib3k==1.0.0'
-            'urllib3==2.7.0'
-          )
-          for spec in "${specs[@]}"; do
-            python -m pip download --disable-pip-version-check --no-deps --dest "$root/native" "$spec"
-            python -m pip download --disable-pip-version-check --no-deps --no-binary=:all: --dest "$root/sdist" "$spec" || true
-          done
-          for spec in 'charset-normalizer==3.4.9' 'Pillow==12.3.0'; do
-            python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: --platform manylinux_2_17_aarch64 --python-version 311 --implementation cp --abi cp311 --dest "$root/arm17" "$spec" || true
-            python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: --platform manylinux_2_28_aarch64 --python-version 311 --implementation cp --abi cp311 --dest "$root/arm28" "$spec" || true
-          done
-          echo '=== HERMES HASH PROBE ==='
-          find "$root" -type f -print0 | sort -z | xargs -0 sha256sum
-          echo '=== END HERMES HASH PROBE ==='
-
       - name: Install system validation tools
         run: |
           sudo apt-get update
@@ -73,8 +44,8 @@ jobs:
 
       - name: Install pinned Python environment
         run: |
-          python -m pip install --disable-pip-version-check --requirement requirements-bootstrap.txt
-          python -m pip install --disable-pip-version-check --no-build-isolation --requirement requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes --requirement requirements-bootstrap.txt
+          python -m pip install --disable-pip-version-check --require-hashes --no-build-isolation --requirement requirements-dev.txt
           python -m pip check
 
       - name: Install pinned Hugo Extended
