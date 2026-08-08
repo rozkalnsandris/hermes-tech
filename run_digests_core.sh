@@ -44,11 +44,19 @@ PY
 ping_healthcheck() {
     local url=${1:-}
     local suffix=${2:-}
+    local target escaped
     [[ -n "$url" ]] || return 0
     url=${url%/}
-    curl --fail --silent --show-error \
+    target="${url}${suffix}"
+    escaped=${target//\\/\\\\}
+    escaped=${escaped//\"/\\\"}
+    escaped=${escaped//$'\t'/\\t}
+    escaped=${escaped//$'\r'/\\r}
+    escaped=${escaped//$'\n'/\\n}
+    curl --disable --config - \
+        --fail --silent --show-error \
         --max-time 15 --retry 2 --retry-all-errors \
-        "$url$suffix" >/dev/null \
+        >/dev/null <<<"url = \"$escaped\"" \
         || log "BRĪDINĀJUMS: healthcheck ping '$suffix' neizdevās"
 }
 
