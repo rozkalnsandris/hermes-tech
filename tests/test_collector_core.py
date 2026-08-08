@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from hashlib import sha256
 import json
+import os
 import sqlite3
 import tempfile
 import time
@@ -42,20 +43,45 @@ class CollectorParsingTests(unittest.TestCase):
         self.assertEqual(len(full), collector_core.MAX_CONTENT)
 
     def test_entry_published_prefers_published_and_uses_updated_fallback(self) -> None:
-        published = time.gmtime(1)
-        updated = time.gmtime(2)
-        with patch.object(collector_core.time, "mktime", side_effect=[1000, 2000]):
-            value = collector_core.entry_published(
+        published = time.struct_time((2026, 7, 1, 12, 34, 56, 2, 182, 0))
+        updated = time.struct_time((2026, 7, 1, 13, 45, 0, 2, 182, 0))
+        self.assertEqual(
+            collector_core.entry_published(
                 SimpleNamespace(published_parsed=published, updated_parsed=updated)
-            )
-            self.assertEqual(value, "1970-01-01T00:16:40+00:00")
-
-            value = collector_core.entry_published(
+            ),
+            "2026-07-01T12:34:56+00:00",
+        )
+        self.assertEqual(
+            collector_core.entry_published(
                 SimpleNamespace(published_parsed=None, updated_parsed=updated)
-            )
-            self.assertEqual(value, "1970-01-01T00:33:20+00:00")
-
+            ),
+            "2026-07-01T13:45:00+00:00",
+        )
         self.assertEqual(collector_core.entry_published(SimpleNamespace()), "")
+
+    def test_entry_published_is_host_timezone_independent(self) -> None:
+        if not hasattr(time, "tzset"):
+            self.skipTest("time.tzset unavailable on this platform")
+        parsed = time.struct_time((2026, 7, 1, 12, 34, 56, 2, 182, 0))
+        entry = SimpleNamespace(published_parsed=parsed, updated_parsed=None)
+        expected = "2026-07-01T12:34:56+00:00"
+        original = os.environ.get("TZ")
+        try:
+            for zone in (
+                "UTC0",
+                "CET-1",
+                "CET-1CEST,M3.5.0/2,M10.5.0/3",
+            ):
+                with self.subTest(zone=zone):
+                    os.environ["TZ"] = zone
+                    time.tzset()
+                    self.assertEqual(collector_core.entry_published(entry), expected)
+        finally:
+            if original is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = original
+            time.tzset()
 
 
 class CollectorSchemaStartupTests(unittest.TestCase):
