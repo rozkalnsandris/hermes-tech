@@ -110,7 +110,17 @@ class CollectorMainThresholdTests(unittest.TestCase):
     ) -> int:
         self.feeds.write_text("\n".join(feed_lines) + "\n", encoding="utf-8")
 
-        def fake_parse(url: str) -> object:
+        def fake_fetch(url: str) -> object:
+            return SimpleNamespace(
+                body=url.encode("utf-8"),
+                final_url=url,
+                status_code=200,
+                content_type="application/rss+xml",
+                redirects=0,
+            )
+
+        def fake_parse(payload: bytes) -> object:
+            url = payload.decode("utf-8")
             result = parsed_by_url[url]
             if isinstance(result, BaseException):
                 raise result
@@ -120,6 +130,7 @@ class CollectorMainThresholdTests(unittest.TestCase):
             patch.object(collector_core, "DB", self.db),
             patch.object(collector_core, "FEEDS", self.feeds),
             patch.object(collector_core, "LOG", self.log),
+            patch.object(collector_core, "fetch_feed", side_effect=fake_fetch),
             patch.object(
                 collector_core.feedparser,
                 "parse",
