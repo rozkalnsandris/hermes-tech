@@ -4,6 +4,11 @@ title = "Hermes Tech"
 timeZone = "Europe/Berlin"
 enableRobotsTXT = true
 
+[pagination]
+  disableAliases = true
+  pagerSize = 10
+  path = "page"
+
 [params]
   description = "AI Platform Engineer. Exploring DevOps, Cloud, Kubernetes and AI infrastructure. Filtering the noise. Testing the ideas. Sharing what matters."
   tagline = "The technology is not the story. The engineering behind it is."

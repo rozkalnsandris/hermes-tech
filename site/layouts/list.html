@@ -3,7 +3,15 @@
   <h1>{{ .Title }}</h1>
   {{ with .Content }}<p class="sub">{{ . | plainify }}</p>{{ end }}
 </section>
-{{ range .Pages.ByDate.Reverse }}
-{{ partial "digest-row.html" . }}
+{{ if eq .Kind "section" }}
+  {{ $paginator := partial "section-paginator.html" . }}
+  {{ range $paginator.Pages }}
+    {{ partial "digest-row.html" . }}
+  {{ end }}
+  {{ partial "archive-pagination.html" $paginator }}
+{{ else }}
+  {{ range .Pages.ByDate.Reverse }}
+    {{ partial "digest-row.html" . }}
+  {{ end }}
 {{ end }}
 {{ end }}

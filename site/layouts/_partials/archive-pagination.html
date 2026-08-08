@@ -1,0 +1,11 @@
+{{ if gt .TotalPages 1 }}
+<nav class="archive-pagination" aria-label="Archive pages">
+  <span class="pager-edge pager-newer">
+    {{ with .Prev }}<a rel="prev" href="{{ .URL }}"><span aria-hidden="true">←</span> Newer</a>{{ end }}
+  </span>
+  <span class="pager-count">Page {{ .PageNumber }} of {{ .TotalPages }}</span>
+  <span class="pager-edge pager-older">
+    {{ with .Next }}<a rel="next" href="{{ .URL }}">Older <span aria-hidden="true">→</span></a>{{ end }}
+  </span>
+</nav>
+{{ end }}

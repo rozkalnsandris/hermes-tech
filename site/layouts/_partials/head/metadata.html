@@ -1,3 +1,10 @@
+{{ $pageURL := .Permalink }}
+{{ if eq .Kind "section" }}
+  {{ $paginator := partial "section-paginator.html" . }}
+  {{ $pageURL = $paginator.URL | absURL }}
+  {{ with $paginator.Prev }}<link rel="prev" href="{{ .URL | absURL }}">{{ end }}
+  {{ with $paginator.Next }}<link rel="next" href="{{ .URL | absURL }}">{{ end }}
+{{ end }}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/favicon-v15.ico" sizes="any">
@@ -15,7 +22,7 @@
 <meta property="og:title" content="{{ .Title }}">
 <meta property="og:site_name" content="{{ site.Title }}">
 <meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}">
-<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:url" content="{{ $pageURL }}">
 <meta property="og:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
 <meta property="og:locale" content="en_US">
 {{ if .Params.images }}
@@ -31,5 +38,5 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ .Title }}">
 <meta name="twitter:description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
-<link rel="canonical" href="{{ .Permalink }}">
+<link rel="canonical" href="{{ $pageURL }}">
 {{ range .AlternativeOutputFormats }}<link rel="{{ .Rel }}" type="{{ .MediaType.Type }}" href="{{ .Permalink }}" title="{{ site.Title }}">{{ end }}
