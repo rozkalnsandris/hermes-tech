@@ -64,6 +64,14 @@ def _install_classify_resilience_contracts() -> None:
     install_classify_resilience_contracts(_core)
 
 
+def _install_digest_response_resilience_contracts() -> None:
+    if not hasattr(_core, "call_deepseek"):
+        return
+    from digest_response_resilience import install_digest_response_resilience
+
+    install_digest_response_resilience(_core)
+
+
 def _install_diversity_contracts() -> None:
     # Minimal fake cores used by isolated runtime-root tests intentionally do not
     # implement digest selection. Real Hermes cores do, and must load the
@@ -87,6 +95,7 @@ if hasattr(_core, "write_routing_manifest"):
 
     install_digest_time_contracts(_core)
 _install_classify_resilience_contracts()
+_install_digest_response_resilience_contracts()
 _install_diversity_contracts()
 _export_core_api()
 
