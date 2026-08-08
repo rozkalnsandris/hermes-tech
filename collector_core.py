@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import sqlite3
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -13,6 +12,7 @@ from urllib.parse import urlsplit
 import feedparser
 
 from hermes_db import SchemaError, ensure_current_schema
+from hermes_time import rss_struct_time_to_utc_iso
 from rss_transport import fetch_feed
 from source_health import (
     SourceHealthError,
@@ -86,13 +86,11 @@ def entry_texts(entry) -> tuple[str, str]:
 
 
 def entry_published(entry) -> str:
+    """Return feedparser UTC timestamps without consulting the host timezone."""
     for attr in ("published_parsed", "updated_parsed"):
         parsed = getattr(entry, attr, None)
         if parsed:
-            return datetime.fromtimestamp(
-                time.mktime(parsed),
-                tz=timezone.utc,
-            ).isoformat()
+            return rss_struct_time_to_utc_iso(parsed)
     return ""
 
 
