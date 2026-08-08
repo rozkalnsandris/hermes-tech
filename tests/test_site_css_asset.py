@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site"
-BASE_TEMPLATE = SITE / "layouts" / "_default" / "baseof.html"
+BASE_TEMPLATE = SITE / "layouts" / "baseof.html"
+STYLES_PARTIAL = SITE / "layouts" / "_partials" / "head" / "styles.html"
 CSS_SOURCE = SITE / "assets" / "css" / "site.css"
 
 LINK_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
@@ -44,18 +45,21 @@ def stylesheet_reference(html: str) -> tuple[str, str]:
 
 
 class SiteCssAssetContractTests(unittest.TestCase):
-    def test_base_template_uses_hugo_asset_pipeline(self) -> None:
-        template = BASE_TEMPLATE.read_text(encoding="utf-8")
+    def test_base_template_delegates_hugo_asset_pipeline_to_styles_partial(self) -> None:
+        base = BASE_TEMPLATE.read_text(encoding="utf-8")
+        styles = STYLES_PARTIAL.read_text(encoding="utf-8")
 
-        self.assertNotIn("<style", template)
+        self.assertIn('{{ partial "head/styles.html" . }}', base)
+        self.assertNotIn("resources.Get", base)
+        self.assertNotIn("<style", styles)
         self.assertIn(
             '{{ $style := resources.Get "css/site.css" | minify | fingerprint "sha384" }}',
-            template,
+            styles,
         )
         self.assertIn(
             '<link rel="stylesheet" href="{{ $style.RelPermalink }}" '
             'integrity="{{ $style.Data.Integrity }}" crossorigin="anonymous">',
-            template,
+            styles,
         )
 
     def test_css_source_has_one_canonical_blockquote_rule(self) -> None:
