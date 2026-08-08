@@ -95,16 +95,25 @@ cleanup() {
 }
 trap cleanup EXIT
 mkdir -p "$build_root/cache" "$build_root/public"
+hugo_log="$build_root/hugo.log"
 HUGO_CACHEDIR="$build_root/cache" \
     hugo --source "$ROOT/site" \
     --destination "$build_root/public" \
     --cleanDestinationDir \
     --minify \
-    --noBuildLock
+    --noBuildLock \
+    --logLevel info \
+    --panicOnWarning \
+    2>&1 | tee "$hugo_log"
 [[ -s "$build_root/public/index.html" ]] || {
     echo "KĻŪDA: Hugo pagaidu būvē nav index.html" >&2
     exit 1
 }
+if grep -Eiq 'deprecat(e|ed|ion|ions)' "$hugo_log"; then
+    echo "KĻŪDA: Hugo build log satur deprecation paziņojumu" >&2
+    grep -Ei 'deprecat(e|ed|ion|ions)' "$hugo_log" >&2 || true
+    exit 1
+fi
 
 source_revision=${HERMES_TECH_SOURCE_REVISION:-$(git rev-parse HEAD)}
 python tools/capture_site_baseline.py "$build_root/public" \
