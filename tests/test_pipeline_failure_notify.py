@@ -57,6 +57,7 @@ class PipelineFailureNotifyTests(unittest.TestCase):
 
     def test_runner_invokes_notifier_only_after_full_run_failure(self) -> None:
         runner = (ROOT / "run_digests.sh").read_text(encoding="utf-8")
+        self.assertIn('export HERMES_TECH_ROOT="$BASE"', runner)
         self.assertIn("if (( $# > 0 )); then", runner)
         self.assertIn('exec bash -c "$PATCHED" "$CORE" "$@"', runner)
         self.assertIn('bash -c "$PATCHED" "$CORE"', runner)
