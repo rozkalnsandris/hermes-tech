@@ -121,7 +121,10 @@ printf '%s\n' "$TODAY" > "$BASE/business-date.txt"
 ''',
             encoding="utf-8",
         )
-        proc = self.run_script("run_digests.sh")
+        # This fixture validates only the timezone shell adapter. Use the
+        # explicit check path so production-only readiness checks do not turn
+        # an isolated rendering fixture into an infrastructure integration test.
+        proc = self.run_script("run_digests.sh", "--check")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = (self.root / "business-date.txt").read_text(encoding="utf-8").strip()
         expected = subprocess.run(
