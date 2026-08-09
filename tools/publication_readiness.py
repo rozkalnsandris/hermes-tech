@@ -37,6 +37,7 @@ BLOCKED_DEPLOY_REASONS = {
     "DB_APPLY_REQUIRES_SEPARATE_APPROVAL",
     "DEPLOY_FAILED",
 }
+SUPPORTED_READINESS_SCHEMAS = {1, 2}
 
 
 @dataclass(frozen=True)
@@ -87,14 +88,47 @@ def _safe_sha(value: str) -> str:
 
 
 def load_readiness_state(state_root: Path) -> dict[str, Any] | None:
+    """Load the pull-deploy state without mutating or upgrading it on disk.
+
+    Schema v1 is retained for rolling compatibility with the original R2 state.
+    R5 writes schema v2, which adds watchdog metadata plus ``main_sha`` while
+    preserving the publication gate's reason/target/production contract.
+    """
     path = state_root / "readiness.json"
     if not path.exists():
         return None
     if not path.is_file() or path.is_symlink():
         raise RuntimeError(f"unsafe readiness state path: {path}")
+
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+    if not isinstance(payload, dict):
         raise RuntimeError("unsupported readiness state")
+
+    schema = payload.get("schema_version")
+    if schema not in SUPPORTED_READINESS_SCHEMAS:
+        raise RuntimeError("unsupported readiness state")
+
+    target_sha = payload.get("target_sha")
+    production_sha = payload.get("production_sha")
+    reason = payload.get("reason")
+
+    if schema == 2:
+        main_sha = payload.get("main_sha")
+        if main_sha != target_sha:
+            raise RuntimeError("readiness v2 main_sha/target_sha mismatch")
+
+    for label, value in (
+        ("target", target_sha),
+        ("production", production_sha),
+    ):
+        if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
+            raise RuntimeError(f"readiness state has invalid {label} SHA")
+
+    if reason != CURRENT and reason not in BLOCKED_DEPLOY_REASONS:
+        raise RuntimeError("readiness state has unsupported reason")
+    if reason == CURRENT and target_sha != production_sha:
+        raise RuntimeError("CURRENT readiness state has mismatched SHAs")
+
     return payload
 
 
