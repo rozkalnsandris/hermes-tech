@@ -18,13 +18,19 @@ SOURCE='/home/andris/hermes-tech-worktrees/release-control'
 STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
 EVIDENCE_ROOT="$STATE_ROOT/evidence"
 CONTROL_APPROVAL="$STATE_ROOT/approved-control-plane-sha"
+INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"
 LOCK_FILE="$STATE_ROOT/poll.lock"
 HELPER='/usr/local/sbin/hermes-tech-deploy-main'
+CLASSIFIER='/usr/local/libexec/hermes-tech/classify-deploy-impact'
+READINESS='/usr/local/libexec/hermes-tech/deploy-readiness'
 
 for command_name in date flock gh git install python3 rm sudo tr; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
-[[ -x "$HELPER" && ! -L "$HELPER" ]] || fail 'installed deploy helper is missing or unsafe'
+for installed_helper in "$HELPER" "$CLASSIFIER" "$READINESS"; do
+    [[ -x "$installed_helper" && ! -L "$installed_helper" ]] \
+        || fail "installed control-plane helper is missing or unsafe: $installed_helper"
+done
 [[ -d "$PRIMARY" && ! -L "$PRIMARY" ]] || fail 'production root is missing or unsafe'
 [[ -d "$SOURCE" && ! -L "$SOURCE" ]] || fail 'release-control worktree is missing or unsafe'
 
@@ -35,6 +41,42 @@ if ! flock -n 9; then
     printf 'PULL_DEPLOY_RESULT=NO_OP_BUSY\n'
     exit 0
 fi
+
+record_readiness() {
+    local reason=$1
+    local target_sha=$2
+    local production_sha=$3
+    if ! "$READINESS" record \
+        --state-root "$STATE_ROOT" \
+        --env-file "$PRIMARY/.env" \
+        --reason "$reason" \
+        --target-sha "$target_sha" \
+        --production-sha "$production_sha"; then
+        printf 'WARNING: deploy readiness state/notification update failed\n' >&2
+    fi
+}
+
+classify_range() {
+    local base_sha=$1
+    local target_sha=$2
+    (
+        cd "$SOURCE"
+        "$CLASSIFIER" --base "$base_sha" --target "$target_sha" --json
+    )
+}
+
+parse_impact() {
+    python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+classification = payload.get("classification")
+control = payload.get("control_plane_changed")
+if not isinstance(classification, str) or not isinstance(control, bool):
+    raise SystemExit("invalid deploy-impact payload")
+print(classification)
+print("true" if control else "false")
+'
+}
 
 git -C "$SOURCE" fetch --prune origin main
 [[ -z "$(git -C "$SOURCE" branch --show-current)" ]] || fail 'release-control worktree must remain detached'
@@ -47,26 +89,70 @@ PRODUCTION_SHA=$(git -C "$PRIMARY" rev-parse HEAD)
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'origin/main SHA is invalid'
 [[ "$PRODUCTION_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'production SHA is invalid'
 
+INSTALLED_SHA=''
+if [[ -f "$INSTALLED_CONTROL_PLANE" && ! -L "$INSTALLED_CONTROL_PLANE" ]]; then
+    INSTALLED_SHA=$(tr -d '[:space:]' < "$INSTALLED_CONTROL_PLANE")
+fi
+[[ "$INSTALLED_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'installed control-plane SHA is missing or invalid'
+git -C "$SOURCE" cat-file -e "${TARGET_SHA}^{commit}" || fail 'target SHA is not locally available'
+git -C "$SOURCE" cat-file -e "${PRODUCTION_SHA}^{commit}" || fail 'production SHA is not locally available'
+git -C "$SOURCE" cat-file -e "${INSTALLED_SHA}^{commit}" || fail 'installed control-plane SHA is not locally available'
+
+# Production can already be at target after an explicitly authorized manual
+# runtime rollout while the installed poller/service still come from an older
+# control plane. Detect that gap instead of declaring the host publish-ready.
 if [[ "$TARGET_SHA" == "$PRODUCTION_SHA" ]]; then
+    INSTALLED_IMPACT_JSON=$(classify_range "$INSTALLED_SHA" "$TARGET_SHA") \
+        || fail 'cannot classify installed control plane against current main'
+    mapfile -t installed_impact < <(parse_impact <<<"$INSTALLED_IMPACT_JSON")
+    [[ ${#installed_impact[@]} -eq 2 ]] || fail 'invalid installed control-plane classification output'
+    if [[ "${installed_impact[1]}" == true ]]; then
+        record_readiness 'WAIT_CONTROL_PLANE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
+        printf 'PULL_DEPLOY_RESULT=WAIT_CONTROL_PLANE_APPROVAL\n'
+        printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+        printf 'INSTALLED_CONTROL_PLANE_SHA=%s\n' "$INSTALLED_SHA"
+        exit 0
+    fi
+    record_readiness 'CURRENT' "$TARGET_SHA" "$PRODUCTION_SHA"
     printf 'PULL_DEPLOY_RESULT=NO_OP_ALREADY_CURRENT\n'
     printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
     exit 0
 fi
 
-git -C "$SOURCE" cat-file -e "${TARGET_SHA}^{commit}" || fail 'target SHA is not locally available'
-git -C "$SOURCE" cat-file -e "${PRODUCTION_SHA}^{commit}" || fail 'production SHA is not locally available'
-git -C "$SOURCE" merge-base --is-ancestor "$PRODUCTION_SHA" "$TARGET_SHA" \
-    || fail 'production SHA is not an ancestor of current origin/main'
+git -C "$SOURCE" merge-base --is-ancestor "$PRODUCTION_SHA" "$TARGET_SHA" || {
+    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+    fail 'production SHA is not an ancestor of current origin/main'
+}
 
-CONTROL_PLANE_CHANGED=false
-mapfile -t changed_paths < <(git -C "$SOURCE" diff --name-only "$PRODUCTION_SHA..$TARGET_SHA")
-for changed_path in "${changed_paths[@]}"; do
-    case "$changed_path" in
-        .github/workflows/*|tools/pull-deploy/*|ops/systemd/hermes-tech-pull-deploy.service|ops/systemd/hermes-tech-pull-deploy.timer)
-            CONTROL_PLANE_CHANGED=true
-            ;;
-    esac
-done
+IMPACT_JSON=$(classify_range "$PRODUCTION_SHA" "$TARGET_SHA") \
+    || fail 'cannot classify production-to-main deploy impact'
+mapfile -t impact < <(parse_impact <<<"$IMPACT_JSON")
+[[ ${#impact[@]} -eq 2 ]] || fail 'invalid deploy-impact classification output'
+DEPLOY_IMPACT=${impact[0]}
+CONTROL_PLANE_CHANGED=${impact[1]}
+printf 'DEPLOY_IMPACT=%s\n' "$DEPLOY_IMPACT"
+printf 'CONTROL_PLANE_CHANGED=%s\n' "$CONTROL_PLANE_CHANGED"
+
+case "$DEPLOY_IMPACT" in
+    DB_APPLY_REQUIRES_SEPARATE_APPROVAL)
+        record_readiness 'DB_APPLY_REQUIRES_SEPARATE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
+        printf 'PULL_DEPLOY_RESULT=DB_APPLY_REQUIRES_SEPARATE_APPROVAL\n'
+        printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+        exit 0
+        ;;
+    RUNTIME_ROLLOUT_REQUIRED)
+        record_readiness 'RUNTIME_ROLLOUT_REQUIRED' "$TARGET_SHA" "$PRODUCTION_SHA"
+        printf 'PULL_DEPLOY_RESULT=RUNTIME_ROLLOUT_REQUIRED\n'
+        printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
+        exit 0
+        ;;
+    CONTROL_PLANE_APPROVAL_REQUIRED|AUTO_DEPLOY_SAFE|NO_DEPLOY)
+        ;;
+    *)
+        record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+        fail "unsupported deploy impact: $DEPLOY_IMPACT"
+        ;;
+esac
 
 if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
     APPROVED_SHA=''
@@ -74,6 +160,7 @@ if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
         APPROVED_SHA=$(tr -d '[:space:]' < "$CONTROL_APPROVAL")
     fi
     if [[ "$APPROVED_SHA" != "$TARGET_SHA" ]]; then
+        record_readiness 'WAIT_CONTROL_PLANE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
         printf 'PULL_DEPLOY_RESULT=WAIT_CONTROL_PLANE_APPROVAL\n'
         printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
         exit 0
@@ -99,6 +186,7 @@ print(max((int(row["id"]) for row in runs), default=""))
 ' "$TARGET_SHA" <<<"$RUNS_JSON")
 
 if [[ -z "$CI_RUN_ID" ]]; then
+    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA"
     printf 'PULL_DEPLOY_RESULT=WAIT_CI\n'
     printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
     exit 0
@@ -116,17 +204,23 @@ if len(validate) != 1:
 job = validate[0]
 if job.get("status") != "completed" or job.get("conclusion") != "success":
     raise SystemExit("validate job is not completed/success")
-' <<<"$JOBS_JSON" || fail 'successful exact-SHA CI does not contain exactly one successful validate job'
+' <<<"$JOBS_JSON" || {
+    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA"
+    fail 'successful exact-SHA CI does not contain exactly one successful validate job'
+}
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 EVIDENCE_DIR="$EVIDENCE_ROOT/deploy-$TARGET_SHA-$STAMP-$$"
 install -d -m 0700 "$EVIDENCE_DIR"
-printf 'TARGET_SHA=%s\nCI_RUN_ID=%s\nCONTROL_PLANE_CHANGED=%s\n' \
-    "$TARGET_SHA" "$CI_RUN_ID" "$CONTROL_PLANE_CHANGED" \
+printf 'TARGET_SHA=%s\nCI_RUN_ID=%s\nCONTROL_PLANE_CHANGED=%s\nDEPLOY_IMPACT=%s\n' \
+    "$TARGET_SHA" "$CI_RUN_ID" "$CONTROL_PLANE_CHANGED" "$DEPLOY_IMPACT" \
     >"$EVIDENCE_DIR/preflight.env"
 chmod 0600 "$EVIDENCE_DIR/preflight.env"
 
-sudo --non-interactive "$HELPER" "$TARGET_SHA" "$EVIDENCE_DIR"
+if ! sudo --non-interactive "$HELPER" "$TARGET_SHA" "$EVIDENCE_DIR"; then
+    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+    fail 'root deploy helper failed'
+fi
 
 if [[ "$CONTROL_PLANE_CHANGED" == true && -f "$CONTROL_APPROVAL" ]]; then
     APPROVED_SHA=$(tr -d '[:space:]' < "$CONTROL_APPROVAL")
@@ -135,6 +229,7 @@ if [[ "$CONTROL_PLANE_CHANGED" == true && -f "$CONTROL_APPROVAL" ]]; then
     fi
 fi
 
+record_readiness 'CURRENT' "$TARGET_SHA" "$TARGET_SHA"
 printf 'PULL_DEPLOY_RESULT=PASS\n'
 printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
 printf 'CI_RUN_ID=%s\n' "$CI_RUN_ID"
