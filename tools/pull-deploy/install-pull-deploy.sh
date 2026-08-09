@@ -31,6 +31,7 @@ DEST_TIMER='/etc/systemd/system/hermes-tech-pull-deploy.timer'
 SUDOERS='/etc/sudoers.d/hermes-tech-pull-deploy'
 STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
 EVIDENCE_ROOT="$STATE_ROOT/evidence"
+INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"
 
 for command_name in bash chmod chown gh git id install mktemp python3 rm runuser sha256sum sudo systemctl visudo; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
@@ -94,6 +95,11 @@ install -o root -g root -m 0644 "$SOURCE_WORKTREE/$SOURCE_SERVICE_REL" "$DEST_SE
 install -o root -g root -m 0644 "$SOURCE_WORKTREE/$SOURCE_TIMER_REL" "$DEST_TIMER"
 install -o root -g root -m 0440 "$TMPDIR_INSTALL/sudoers" "$SUDOERS"
 visudo -cf "$SUDOERS" >/dev/null
+
+printf '%s\n' "$HEAD_SHA" >"$TMPDIR_INSTALL/installed-control-plane-sha"
+install -o "$OWNER" -g "$OWNER" -m 0600 \
+    "$TMPDIR_INSTALL/installed-control-plane-sha" "$INSTALLED_CONTROL_PLANE"
+
 systemctl daemon-reload
 
 sudo -n -l -U "$OWNER" -- "$DEST_HELPER" "$HEAD_SHA" \
@@ -106,6 +112,7 @@ printf 'HELPER_SHA256=%s\n' "$(sha256sum "$DEST_HELPER" | awk '{print $1}')"
 printf 'POLLER_SHA256=%s\n' "$(sha256sum "$DEST_POLLER" | awk '{print $1}')"
 printf 'CLASSIFIER_SHA256=%s\n' "$(sha256sum "$DEST_CLASSIFIER" | awk '{print $1}')"
 printf 'READINESS_SHA256=%s\n' "$(sha256sum "$DEST_READINESS" | awk '{print $1}')"
+printf 'INSTALLED_CONTROL_PLANE_SHA=%s\n' "$HEAD_SHA"
 printf 'TIMER_ENABLED=%s\n' "$(systemctl is-enabled hermes-tech-pull-deploy.timer 2>/dev/null || true)"
 printf 'PRODUCTION_CHANGED=false\n'
 printf 'DATABASE_MIGRATIONS_AUTHORIZED=false\n'
