@@ -68,6 +68,20 @@ def _install_classify_resilience_contracts() -> None:
     install_classify_resilience_contracts(_core)
 
 
+def _install_grounding_evidence_contracts() -> None:
+    if not hasattr(_core, "fetch_routed_candidates"):
+        return
+    from digest_grounding import install_grounding_evidence_contracts
+
+    install_grounding_evidence_contracts(_core)
+    installed = getattr(_core, "fetch_routed_candidates", None)
+    if not callable(installed) or installed.__module__ != "digest_grounding":
+        raise RuntimeError(
+            "grounding evidence contract installation failed closed: "
+            f"owner={getattr(installed, '__module__', None)!r}"
+        )
+
+
 def _install_digest_response_resilience_contracts() -> None:
     if not hasattr(_core, "call_deepseek"):
         return
@@ -123,6 +137,7 @@ if hasattr(_core, "write_routing_manifest"):
 
     install_digest_time_contracts(_core)
 _install_classify_resilience_contracts()
+_install_grounding_evidence_contracts()
 _install_digest_response_resilience_contracts()
 _install_diversity_contracts()
 _install_notification_contracts()
