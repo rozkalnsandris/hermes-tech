@@ -11,6 +11,7 @@ BASE="${HERMES_TECH_ROOT:-$HOME/hermes-tech}"
 }
 export HERMES_TECH_ROOT="$BASE"
 PYTHON="$BASE/venv/bin/python"
+PUBLISH_NOT_READY_RC=79
 
 resolve_runtime_file() {
     local relative=$1
@@ -48,8 +49,8 @@ if (( $# > 0 )); then
 fi
 
 # Full scheduled runs can fail before run_digests_core.sh reaches its normal
-# Telegram summary block (for example, during global classification). Remember
-# the current log boundary so a post-run notifier can inspect only this run.
+# Telegram summary block. Remember the current log boundary so a best-effort
+# fallback notifier can inspect only this run.
 LOG_FILE="$BASE/logs/digest-cron.log"
 if [[ -f "$LOG_FILE" ]]; then
     LOG_START_SIZE=$(stat -c '%s' "$LOG_FILE" 2>/dev/null || printf '0')
@@ -57,16 +58,12 @@ else
     LOG_START_SIZE=0
 fi
 
-set +e
-bash -c "$PATCHED" "$CORE"
-rc=$?
-set -e
-
-if (( rc != 0 )); then
+notify_early_failure() {
+    local rc=$1
     if NOTIFIER=$(resolve_runtime_file tools/notify_pipeline_failure.py); then
         set +e
         "$PYTHON" "$NOTIFIER" "$BASE" "$LOG_FILE" "$LOG_START_SIZE" "$rc"
-        notify_rc=$?
+        local notify_rc=$?
         set -e
         if (( notify_rc != 0 )); then
             echo "BRĪDINĀJUMS: agrīno Telegram kļūdas paziņojumu neizdevās nosūtīt (rc=$notify_rc)" >&2
@@ -74,6 +71,84 @@ if (( rc != 0 )); then
     else
         echo "BRĪDINĀJUMS: nav agrīnā Telegram kļūdas notifiera" >&2
     fi
+}
+
+# Fail before classification/generation/model calls when production is not
+# publish-ready. The core still performs real same-date cross-category
+# validation immediately before its publication phase.
+READINESS=$(resolve_runtime_file tools/publication_readiness.py)
+STATE_ROOT=${HERMES_TECH_DEPLOY_STATE_ROOT:-$HOME/.local/state/hermes-tech-main-deploy}
+
+set +e
+READINESS_JSON=$("$PYTHON" "$READINESS" check \
+    --root "$BASE" \
+    --state-root "$STATE_ROOT" \
+    --json)
+readiness_rc=$?
+set -e
+
+if (( readiness_rc == PUBLISH_NOT_READY_RC )); then
+    mapfile -t readiness_fields < <(
+        "$PYTHON" -c '
+import json, sys
+payload = json.load(sys.stdin)
+for key in ("reason", "target_sha", "production_sha"):
+    value = payload.get(key)
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"invalid readiness field: {key}")
+    print(value)
+' <<<"$READINESS_JSON"
+    )
+    [[ ${#readiness_fields[@]} -eq 3 ]] || {
+        echo "KĻŪDA: nederīgs publication readiness rezultāts" >&2
+        notify_early_failure 1
+        exit 1
+    }
+
+    reason=${readiness_fields[0]}
+    target_sha=${readiness_fields[1]}
+    production_sha=${readiness_fields[2]}
+
+    echo "KĻŪDA: publication readiness bloķēta: reason=$reason target=$target_sha production=$production_sha" >&2
+    echo "PUBLISH_READINESS_BLOCKED=true"
+    echo "PUBLISH_READINESS_REASON=$reason"
+    echo "TARGET_SHA=$target_sha"
+    echo "PRODUCTION_SHA=$production_sha"
+    echo "MODEL_CALLS_EXECUTED=false"
+    echo "PUBLICATION_CALLS_EXECUTED=0"
+    echo "DATABASE_MUTATION_EXECUTED=false"
+
+    set +e
+    "$PYTHON" "$READINESS" notify \
+        --root "$BASE" \
+        --reason "$reason" \
+        --target-sha "$target_sha" \
+        --production-sha "$production_sha"
+    readiness_notify_rc=$?
+    set -e
+
+    if (( readiness_notify_rc == 0 )); then
+        echo "PUBLISH_READINESS_TELEGRAM=PASS"
+    else
+        echo "BRĪDINĀJUMS: publication readiness Telegram paziņojumu neizdevās nosūtīt (rc=$readiness_notify_rc)" >&2
+        notify_early_failure "$PUBLISH_NOT_READY_RC"
+    fi
+    exit "$PUBLISH_NOT_READY_RC"
+elif (( readiness_rc != 0 )); then
+    echo "KĻŪDA: publication readiness pārbaude tehniski neizdevās (rc=$readiness_rc)" >&2
+    notify_early_failure "$readiness_rc"
+    exit "$readiness_rc"
+fi
+
+echo "PUBLISH_READINESS=READY"
+
+set +e
+bash -c "$PATCHED" "$CORE"
+rc=$?
+set -e
+
+if (( rc != 0 )); then
+    notify_early_failure "$rc"
 fi
 
 exit "$rc"
