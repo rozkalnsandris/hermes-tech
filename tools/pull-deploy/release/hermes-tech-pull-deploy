@@ -46,10 +46,12 @@ record_readiness() {
     local reason=$1
     local target_sha=$2
     local production_sha=$3
+    local deploy_impact=$4
     if ! "$READINESS" record \
         --state-root "$STATE_ROOT" \
         --env-file "$PRIMARY/.env" \
         --reason "$reason" \
+        --deploy-impact "$deploy_impact" \
         --target-sha "$target_sha" \
         --production-sha "$production_sha"; then
         printf 'WARNING: deploy readiness state/notification update failed\n' >&2
@@ -107,20 +109,24 @@ if [[ "$TARGET_SHA" == "$PRODUCTION_SHA" ]]; then
     mapfile -t installed_impact < <(parse_impact <<<"$INSTALLED_IMPACT_JSON")
     [[ ${#installed_impact[@]} -eq 2 ]] || fail 'invalid installed control-plane classification output'
     if [[ "${installed_impact[1]}" == true ]]; then
-        record_readiness 'WAIT_CONTROL_PLANE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
+        record_readiness \
+            'WAIT_CONTROL_PLANE_APPROVAL' \
+            "$TARGET_SHA" \
+            "$PRODUCTION_SHA" \
+            "${installed_impact[0]}"
         printf 'PULL_DEPLOY_RESULT=WAIT_CONTROL_PLANE_APPROVAL\n'
         printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
         printf 'INSTALLED_CONTROL_PLANE_SHA=%s\n' "$INSTALLED_SHA"
         exit 0
     fi
-    record_readiness 'CURRENT' "$TARGET_SHA" "$PRODUCTION_SHA"
+    record_readiness 'CURRENT' "$TARGET_SHA" "$PRODUCTION_SHA" 'NO_DEPLOY'
     printf 'PULL_DEPLOY_RESULT=NO_OP_ALREADY_CURRENT\n'
     printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
     exit 0
 fi
 
 git -C "$SOURCE" merge-base --is-ancestor "$PRODUCTION_SHA" "$TARGET_SHA" || {
-    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA" 'UNCLASSIFIED'
     fail 'production SHA is not an ancestor of current origin/main'
 }
 
@@ -135,13 +141,21 @@ printf 'CONTROL_PLANE_CHANGED=%s\n' "$CONTROL_PLANE_CHANGED"
 
 case "$DEPLOY_IMPACT" in
     DB_APPLY_REQUIRES_SEPARATE_APPROVAL)
-        record_readiness 'DB_APPLY_REQUIRES_SEPARATE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
+        record_readiness \
+            'DB_APPLY_REQUIRES_SEPARATE_APPROVAL' \
+            "$TARGET_SHA" \
+            "$PRODUCTION_SHA" \
+            "$DEPLOY_IMPACT"
         printf 'PULL_DEPLOY_RESULT=DB_APPLY_REQUIRES_SEPARATE_APPROVAL\n'
         printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
         exit 0
         ;;
     RUNTIME_ROLLOUT_REQUIRED)
-        record_readiness 'RUNTIME_ROLLOUT_REQUIRED' "$TARGET_SHA" "$PRODUCTION_SHA"
+        record_readiness \
+            'RUNTIME_ROLLOUT_REQUIRED' \
+            "$TARGET_SHA" \
+            "$PRODUCTION_SHA" \
+            "$DEPLOY_IMPACT"
         printf 'PULL_DEPLOY_RESULT=RUNTIME_ROLLOUT_REQUIRED\n'
         printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
         exit 0
@@ -149,7 +163,7 @@ case "$DEPLOY_IMPACT" in
     CONTROL_PLANE_APPROVAL_REQUIRED|AUTO_DEPLOY_SAFE|NO_DEPLOY)
         ;;
     *)
-        record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+        record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA" "$DEPLOY_IMPACT"
         fail "unsupported deploy impact: $DEPLOY_IMPACT"
         ;;
 esac
@@ -160,7 +174,11 @@ if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
         APPROVED_SHA=$(tr -d '[:space:]' < "$CONTROL_APPROVAL")
     fi
     if [[ "$APPROVED_SHA" != "$TARGET_SHA" ]]; then
-        record_readiness 'WAIT_CONTROL_PLANE_APPROVAL' "$TARGET_SHA" "$PRODUCTION_SHA"
+        record_readiness \
+            'WAIT_CONTROL_PLANE_APPROVAL' \
+            "$TARGET_SHA" \
+            "$PRODUCTION_SHA" \
+            "$DEPLOY_IMPACT"
         printf 'PULL_DEPLOY_RESULT=WAIT_CONTROL_PLANE_APPROVAL\n'
         printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
         exit 0
@@ -186,7 +204,7 @@ print(max((int(row["id"]) for row in runs), default=""))
 ' "$TARGET_SHA" <<<"$RUNS_JSON")
 
 if [[ -z "$CI_RUN_ID" ]]; then
-    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA"
+    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA" "$DEPLOY_IMPACT"
     printf 'PULL_DEPLOY_RESULT=WAIT_CI\n'
     printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
     exit 0
@@ -205,7 +223,7 @@ job = validate[0]
 if job.get("status") != "completed" or job.get("conclusion") != "success":
     raise SystemExit("validate job is not completed/success")
 ' <<<"$JOBS_JSON" || {
-    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA"
+    record_readiness 'WAIT_CI' "$TARGET_SHA" "$PRODUCTION_SHA" "$DEPLOY_IMPACT"
     fail 'successful exact-SHA CI does not contain exactly one successful validate job'
 }
 
@@ -218,7 +236,7 @@ printf 'TARGET_SHA=%s\nCI_RUN_ID=%s\nCONTROL_PLANE_CHANGED=%s\nDEPLOY_IMPACT=%s\
 chmod 0600 "$EVIDENCE_DIR/preflight.env"
 
 if ! sudo --non-interactive "$HELPER" "$TARGET_SHA" "$EVIDENCE_DIR"; then
-    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA"
+    record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA" "$DEPLOY_IMPACT"
     fail 'root deploy helper failed'
 fi
 
@@ -229,7 +247,7 @@ if [[ "$CONTROL_PLANE_CHANGED" == true && -f "$CONTROL_APPROVAL" ]]; then
     fi
 fi
 
-record_readiness 'CURRENT' "$TARGET_SHA" "$TARGET_SHA"
+record_readiness 'CURRENT' "$TARGET_SHA" "$TARGET_SHA" 'NO_DEPLOY'
 printf 'PULL_DEPLOY_RESULT=PASS\n'
 printf 'TARGET_SHA=%s\n' "$TARGET_SHA"
 printf 'CI_RUN_ID=%s\n' "$CI_RUN_ID"
