@@ -36,6 +36,21 @@ print(f"Packaging tools OK: {actual}")
 PY_BOOTSTRAP
 python -m pip check
 
+# Emit one deterministic deploy-impact result for the exact CI source revision.
+# GitHub's first push to a ref can expose an all-zero `before`; workflow_dispatch
+# may expose no base at all. In both cases, classify the target against its
+# direct parent. The workflow checks out full history so PR base/head SHAs are
+# always available without network access inside tools/ci.sh.
+deploy_target=${HERMES_TECH_SOURCE_REVISION:-HEAD}
+deploy_base=${HERMES_TECH_BASE_REVISION:-}
+if [[ -z "$deploy_base" || "$deploy_base" =~ ^0{40}$ ]]; then
+    deploy_base="${deploy_target}^"
+fi
+printf 'Deploy impact for %s..%s\n' "$deploy_base" "$deploy_target"
+python tools/classify_deploy_impact.py \
+    --base "$deploy_base" \
+    --target "$deploy_target"
+
 python - <<'PY'
 from pathlib import Path
 import subprocess
