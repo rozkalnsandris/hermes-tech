@@ -1,0 +1,584 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 077
+PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+export PATH
+
+fail() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ ${EUID:-$(id -u)} -eq 0 ]] || fail 'runtime rollout helper must run as root through sudo'
+[[ $# -eq 2 || $# -eq 3 ]] || fail 'usage: hermes-tech-runtime-rollout <40-sha> <evidence-dir> [--preflight-only]'
+
+TARGET_SHA=$1
+EVIDENCE_DIR=$(readlink -f -- "$2")
+MODE=${3:-apply}
+[[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'target SHA must be 40 lowercase hex characters'
+[[ "$MODE" == apply || "$MODE" == --preflight-only ]] || fail 'third argument must be --preflight-only when present'
+[[ "$EVIDENCE_DIR" =~ ^/home/andris/\.local/state/hermes-tech-main-deploy/evidence/runtime-[0-9a-f]{40}-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] \
+    || fail 'evidence directory is outside the runtime-rollout allowlist'
+[[ -d "$EVIDENCE_DIR" && ! -L "$EVIDENCE_DIR" ]] || fail 'evidence directory is missing or unsafe'
+[[ "$(stat -c '%U:%G' "$EVIDENCE_DIR")" == 'andris:andris' ]] \
+    || fail 'evidence directory ownership is invalid'
+[[ "$(stat -c '%a' "$EVIDENCE_DIR")" == '700' ]] || fail 'evidence directory permissions must be 0700'
+
+PRIMARY='/home/andris/hermes-tech'
+SOURCE='/home/andris/hermes-tech-worktrees/release-control'
+OWNER='andris'
+OWNER_HOME='/home/andris'
+STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
+BACKUP_ROOT="$STATE_ROOT/runtime-backups"
+POLL_LOCK="$STATE_ROOT/poll.lock"
+DIGEST_LOCK="$PRIMARY/.digest-pipeline.lock"
+COLLECTOR_LOCK="$PRIMARY/.collector.lock"
+PUBLISH_LOCK="$PRIMARY/.publish.lock"
+CLASSIFIER='/usr/local/libexec/hermes-tech/classify-deploy-impact'
+READINESS='/usr/local/libexec/hermes-tech/deploy-readiness'
+PUBLIC_URL='https://tech.rozkalns.net/'
+LOCK_WAIT_SECONDS=10
+
+LOG_FILE="$EVIDENCE_DIR/runtime-rollout.log"
+touch "$LOG_FILE"
+chmod 0600 "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+for command_name in \
+    awk bash chmod chown curl find flock gcc gh git id install make mkdir mktemp mv \
+    python3 readlink rm rsync runuser sha256sum stat systemctl tar tee touch; do
+    command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
+done
+[[ -x "$CLASSIFIER" && ! -L "$CLASSIFIER" ]] || fail 'installed deploy-impact classifier is missing or unsafe'
+[[ -x "$READINESS" && ! -L "$READINESS" ]] || fail 'installed deploy-readiness helper is missing or unsafe'
+[[ -d "$PRIMARY" && ! -L "$PRIMARY" ]] || fail 'production root is missing or unsafe'
+[[ -d "$SOURCE" && ! -L "$SOURCE" ]] || fail 'release-control worktree is missing or unsafe'
+[[ -d "$PRIMARY/site/public" && ! -L "$PRIMARY/site/public" ]] || fail 'production public directory is missing or unsafe'
+[[ -f "$PRIMARY/data/hermes.db" && ! -L "$PRIMARY/data/hermes.db" ]] || fail 'production SQLite database is missing or unsafe'
+
+owner_git() {
+    local root=$1
+    shift
+    runuser -u "$OWNER" -- env \
+        HOME="$OWNER_HOME" \
+        GH_CONFIG_DIR="$OWNER_HOME/.config/gh" \
+        PATH='/home/andris/.local/bin:/usr/local/bin:/usr/bin:/bin' \
+        git -C "$root" "$@"
+}
+
+owner_run() {
+    runuser -u "$OWNER" -- env \
+        HOME="$OWNER_HOME" \
+        GH_CONFIG_DIR="$OWNER_HOME/.config/gh" \
+        PATH='/home/andris/.local/bin:/usr/local/bin:/usr/bin:/bin' \
+        "$@"
+}
+
+restore_timer_state() {
+    local enabled=$1
+    local active=$2
+    if [[ "$enabled" == enabled ]]; then
+        systemctl enable hermes-tech-pull-deploy.timer >/dev/null 2>&1 || return 1
+    else
+        systemctl disable hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
+    fi
+    if [[ "$active" == active ]]; then
+        systemctl start hermes-tech-pull-deploy.timer >/dev/null 2>&1 || return 1
+    else
+        systemctl stop hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
+    fi
+}
+
+TIMER_ENABLED_BEFORE=$(systemctl is-enabled hermes-tech-pull-deploy.timer 2>/dev/null || true)
+TIMER_ACTIVE_BEFORE=$(systemctl is-active hermes-tech-pull-deploy.timer 2>/dev/null || true)
+[[ "$TIMER_ENABLED_BEFORE" == enabled || "$TIMER_ENABLED_BEFORE" == disabled ]] \
+    || fail "unexpected timer enabled state: $TIMER_ENABLED_BEFORE"
+[[ "$TIMER_ACTIVE_BEFORE" == active || "$TIMER_ACTIVE_BEFORE" == inactive ]] \
+    || fail "unexpected timer active state: $TIMER_ACTIVE_BEFORE"
+
+WORK=''
+OLD_SHA=''
+OLD_VENV_BACKUP=''
+DB_SHA_BEFORE=''
+MUTATION_STARTED=0
+PUBLIC_BACKUP_READY=0
+OLD_VENV_MOVED=0
+GIT_MOVED=0
+SUCCESS=0
+KEEP_TIMER_DISABLED=0
+ROLLBACK_RESULT='not-required'
+
+declare -a PENDING_DIGEST_PATHS=()
+declare -A PENDING_DIGEST_SHA256=()
+PENDING_DIGEST_DATE=''
+
+pending_digest_date_for_path() {
+    local path=$1
+    if [[ "$path" =~ ^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})-(devops|ai|agents)\.md$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    if [[ "$path" =~ ^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})\.md$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    return 1
+}
+
+capture_pending_digest_state() {
+    local line status path digest_date hash
+    PENDING_DIGEST_PATHS=()
+    PENDING_DIGEST_SHA256=()
+    PENDING_DIGEST_DATE=''
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        status=${line:0:2}
+        path=${line:3}
+        [[ "$status" == '??' ]] || fail "production checkout has tracked or staged change: $line"
+        digest_date=$(pending_digest_date_for_path "$path") \
+            || fail "production checkout has unrelated untracked path: $path"
+        [[ -z "$PENDING_DIGEST_DATE" || "$PENDING_DIGEST_DATE" == "$digest_date" ]] \
+            || fail "pending digest files span multiple dates: $PENDING_DIGEST_DATE and $digest_date"
+        PENDING_DIGEST_DATE=$digest_date
+        [[ -f "$PRIMARY/$path" && ! -L "$PRIMARY/$path" ]] \
+            || fail "pending digest path is not a regular file: $path"
+        hash=$(sha256sum "$PRIMARY/$path" | awk '{print $1}')
+        PENDING_DIGEST_PATHS+=("$path")
+        PENDING_DIGEST_SHA256["$path"]=$hash
+    done < <(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)
+
+    (( ${#PENDING_DIGEST_PATHS[@]} <= 4 )) || fail 'too many pending generated digest source files'
+}
+
+verify_pending_digest_state() {
+    local line status path hash expected actual_count=0
+    declare -A seen=()
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        status=${line:0:2}
+        path=${line:3}
+        [[ "$status" == '??' ]] || return 1
+        [[ ${PENDING_DIGEST_SHA256[$path]+present} == present ]] || return 1
+        [[ ${seen[$path]+present} != present ]] || return 1
+        [[ -f "$PRIMARY/$path" && ! -L "$PRIMARY/$path" ]] || return 1
+        hash=$(sha256sum "$PRIMARY/$path" | awk '{print $1}')
+        expected=${PENDING_DIGEST_SHA256[$path]}
+        [[ "$hash" == "$expected" ]] || return 1
+        seen["$path"]=1
+        actual_count=$((actual_count + 1))
+    done < <(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)
+
+    [[ $actual_count -eq ${#PENDING_DIGEST_PATHS[@]} ]]
+}
+
+write_pending_digest_evidence() {
+    local path
+    local manifest="$EVIDENCE_DIR/pending-digests.sha256"
+    : >"$manifest"
+    chmod 0600 "$manifest"
+    for path in "${PENDING_DIGEST_PATHS[@]}"; do
+        printf '%s  %s\n' "${PENDING_DIGEST_SHA256[$path]}" "$path" >>"$manifest"
+    done
+}
+
+verify_database_unchanged() {
+    local actual
+    [[ -n "$DB_SHA_BEFORE" ]] || return 1
+    actual=$(sha256sum "$PRIMARY/data/hermes.db" | awk '{print $1}')
+    [[ "$actual" == "$DB_SHA_BEFORE" ]]
+}
+
+rollback_runtime() {
+    local rc=0
+    printf 'ROLLBACK: restoring pre-rollout production state\n'
+    set +e
+
+    if (( PUBLIC_BACKUP_READY == 1 )) && [[ -d "$WORK/public-before" ]]; then
+        rsync -a --delete "$WORK/public-before/" "$PRIMARY/site/public/" \
+            >"$EVIDENCE_DIR/rsync-rollback.log" 2>&1 || rc=1
+        chown -R "$OWNER:$(id -gn "$OWNER")" "$PRIMARY/site/public" || rc=1
+    fi
+
+    if (( GIT_MOVED == 1 )) && [[ -n "$OLD_SHA" ]]; then
+        owner_git "$PRIMARY" reset --hard "$OLD_SHA" \
+            >"$EVIDENCE_DIR/git-rollback.log" 2>&1 || rc=1
+    fi
+
+    if (( OLD_VENV_MOVED == 1 )) && [[ -n "$OLD_VENV_BACKUP" && -d "$OLD_VENV_BACKUP" ]]; then
+        rm -rf -- "$PRIMARY/venv" || rc=1
+        mv -- "$OLD_VENV_BACKUP" "$PRIMARY/venv" || rc=1
+        chown -R "$OWNER:$(id -gn "$OWNER")" "$PRIMARY/venv" || rc=1
+    fi
+
+    verify_pending_digest_state || rc=1
+    verify_database_unchanged || rc=1
+    curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
+        >"$EVIDENCE_DIR/rollback-site.html" || rc=1
+
+    if ! restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE"; then
+        rc=1
+    fi
+
+    set -e
+    if (( rc == 0 )); then
+        ROLLBACK_RESULT='pass'
+        printf 'RUNTIME_ROLLOUT_ROLLBACK=PASS\n'
+        return 0
+    fi
+    ROLLBACK_RESULT='fail'
+    printf 'RUNTIME_ROLLOUT_ROLLBACK=FAIL\n' >&2
+    return 1
+}
+
+finish() {
+    local original_rc=$?
+    local final_rc=$original_rc
+    trap - EXIT
+
+    if (( original_rc != 0 && MUTATION_STARTED == 1 )); then
+        if ! rollback_runtime; then
+            final_rc=2
+        fi
+    elif (( SUCCESS == 0 )); then
+        restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" || final_rc=2
+    fi
+
+    if [[ -n "$WORK" && -d "$WORK" ]]; then
+        rm -rf -- "$WORK" || true
+    fi
+    chown -R "$OWNER:$OWNER" "$EVIDENCE_DIR" || true
+    exit "$final_rc"
+}
+trap finish EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+printf 'RUNTIME_ROLLOUT_TARGET=%s\n' "$TARGET_SHA"
+printf 'RUNTIME_ROLLOUT_MODE=%s\n' "$MODE"
+printf 'TIMER_ENABLED_BEFORE=%s\n' "$TIMER_ENABLED_BEFORE"
+printf 'TIMER_ACTIVE_BEFORE=%s\n' "$TIMER_ACTIVE_BEFORE"
+
+systemctl disable --now hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
+systemctl stop hermes-tech-pull-deploy.service >/dev/null 2>&1 || true
+
+install -d -o "$OWNER" -g "$OWNER" -m 0700 "$STATE_ROOT" "$BACKUP_ROOT"
+for lock_path in "$POLL_LOCK" "$DIGEST_LOCK" "$COLLECTOR_LOCK" "$PUBLISH_LOCK"; do
+    owner_run touch "$lock_path"
+    [[ "$(stat -c '%U' "$lock_path")" == "$OWNER" ]] || fail "lock ownership is invalid: $lock_path"
+done
+
+exec 8>"$POLL_LOCK"
+flock -w "$LOCK_WAIT_SECONDS" 8 || fail 'poll lock is busy'
+printf 'POLL_LOCK=HELD\n'
+exec 7>"$DIGEST_LOCK"
+flock -w "$LOCK_WAIT_SECONDS" 7 || fail 'digest pipeline lock is busy'
+printf 'DIGEST_PIPELINE_LOCK=HELD\n'
+exec 6>"$COLLECTOR_LOCK"
+flock -w "$LOCK_WAIT_SECONDS" 6 || fail 'collector lock is busy'
+printf 'COLLECTOR_LOCK=HELD\n'
+exec 9>"$PUBLISH_LOCK"
+flock -w "$LOCK_WAIT_SECONDS" 9 || fail 'publisher lock is busy'
+printf 'PUBLISH_LOCK=HELD\n'
+
+printf 'CHECK: exact target and checkout state\n'
+owner_git "$SOURCE" fetch --prune origin main
+REMOTE_SHA=$(owner_git "$SOURCE" rev-parse refs/remotes/origin/main)
+[[ "$REMOTE_SHA" == "$TARGET_SHA" ]] || fail 'target SHA is no longer exact origin/main'
+owner_git "$SOURCE" cat-file -e "${TARGET_SHA}^{commit}" || fail 'target SHA is unavailable'
+[[ -z "$(owner_git "$SOURCE" branch --show-current)" ]] || fail 'release-control worktree must remain detached'
+[[ -z "$(owner_git "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] || fail 'release-control worktree is not clean'
+owner_git "$SOURCE" checkout --detach "$TARGET_SHA"
+[[ "$(owner_git "$SOURCE" rev-parse HEAD)" == "$TARGET_SHA" ]] || fail 'release-control HEAD mismatch'
+
+owner_git "$PRIMARY" fetch --prune origin main
+[[ "$(owner_git "$PRIMARY" branch --show-current)" == main ]] || fail 'production checkout must remain on main'
+capture_pending_digest_state
+write_pending_digest_evidence
+OLD_SHA=$(owner_git "$PRIMARY" rev-parse HEAD)
+[[ "$OLD_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'production SHA is invalid'
+[[ "$OLD_SHA" != "$TARGET_SHA" ]] || fail 'production is already at target; runtime rollout is unnecessary'
+owner_git "$SOURCE" merge-base --is-ancestor "$OLD_SHA" "$TARGET_SHA" \
+    || fail 'production SHA is not an ancestor of target'
+for pending_path in "${PENDING_DIGEST_PATHS[@]}"; do
+    if owner_git "$SOURCE" cat-file -e "${TARGET_SHA}:${pending_path}" 2>/dev/null; then
+        fail "target commit already tracks pending digest path: $pending_path"
+    fi
+done
+
+IMPACT_JSON=$(cd "$SOURCE" && "$CLASSIFIER" --base "$OLD_SHA" --target "$TARGET_SHA" --json)
+mapfile -t impact < <(python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+classification = payload.get("classification")
+control = payload.get("control_plane_changed")
+db = payload.get("db_sensitive_changed")
+if not isinstance(classification, str) or not isinstance(control, bool) or not isinstance(db, bool):
+    raise SystemExit("invalid deploy-impact payload")
+print(classification)
+print("true" if control else "false")
+print("true" if db else "false")
+' <<<"$IMPACT_JSON")
+[[ ${#impact[@]} -eq 3 ]] || fail 'invalid deploy-impact output'
+DEPLOY_IMPACT=${impact[0]}
+CONTROL_PLANE_CHANGED=${impact[1]}
+DB_SENSITIVE_CHANGED=${impact[2]}
+printf 'DEPLOY_IMPACT=%s\n' "$DEPLOY_IMPACT"
+printf 'CONTROL_PLANE_CHANGED=%s\n' "$CONTROL_PLANE_CHANGED"
+printf 'DB_SENSITIVE_CHANGED=%s\n' "$DB_SENSITIVE_CHANGED"
+[[ "$DB_SENSITIVE_CHANGED" == false ]] || fail 'runtime rollout refuses DB-sensitive target; separate DB approval is required'
+[[ "$DEPLOY_IMPACT" == RUNTIME_ROLLOUT_REQUIRED ]] || fail "target is not classified RUNTIME_ROLLOUT_REQUIRED: $DEPLOY_IMPACT"
+
+printf 'CHECK: exact target CI\n'
+RUNS_JSON=$(owner_run gh api \
+    -H 'Accept: application/vnd.github+json' \
+    "repos/rozkalnsandris/hermes-tech/actions/workflows/ci.yml/runs?branch=main&head_sha=$TARGET_SHA&status=completed&per_page=100")
+CI_RUN_ID=$(python3 -c '
+import json, sys
+sha = sys.argv[1]
+data = json.load(sys.stdin)
+runs = [
+    row for row in data.get("workflow_runs", [])
+    if row.get("event") in {"push", "workflow_dispatch"}
+    and row.get("head_branch") == "main"
+    and row.get("head_sha") == sha
+    and row.get("status") == "completed"
+    and row.get("conclusion") == "success"
+]
+print(max((int(row["id"]) for row in runs), default=""))
+' "$TARGET_SHA" <<<"$RUNS_JSON")
+[[ -n "$CI_RUN_ID" ]] || fail 'exact target has no successful main CI run'
+JOBS_JSON=$(owner_run gh api \
+    -H 'Accept: application/vnd.github+json' \
+    "repos/rozkalnsandris/hermes-tech/actions/runs/$CI_RUN_ID/jobs?filter=latest&per_page=100")
+python3 -c '
+import json, sys
+jobs = json.load(sys.stdin).get("jobs", [])
+validate = [row for row in jobs if row.get("name") == "validate"]
+if len(validate) != 1:
+    raise SystemExit(f"expected exactly one validate job, observed={len(validate)}")
+job = validate[0]
+if job.get("status") != "completed" or job.get("conclusion") != "success":
+    raise SystemExit("validate job is not completed/success")
+' <<<"$JOBS_JSON" || fail 'exact target validate job is not successful'
+printf 'EXACT_TARGET_CI=PASS\n'
+printf 'CI_RUN_ID=%s\n' "$CI_RUN_ID"
+
+WORK=$(mktemp -d /tmp/hermes-tech-runtime-rollout.XXXXXXXX)
+chown -R "$OWNER:$(id -gn "$OWNER")" "$WORK"
+mkdir -p "$WORK/candidate" "$WORK/hugo/bin" "$WORK/hugo-cache" "$WORK/site-new" "$WORK/public-before"
+chown -R "$OWNER:$(id -gn "$OWNER")" "$WORK"
+
+TARGET_PYTHON_VERSION=$(tr -d '[:space:]' < "$SOURCE/.python-version")
+[[ "$TARGET_PYTHON_VERSION" =~ ^3\.11\.[0-9]+$ ]] || fail "unsupported target Python version format: $TARGET_PYTHON_VERSION"
+PYTHON_PREFIX="$OWNER_HOME/.local/opt/python-$TARGET_PYTHON_VERSION"
+PYTHON_RUNTIME="$PYTHON_PREFIX/bin/python3.11"
+
+install_python_runtime() {
+    local version=$1
+    local expected_sha archive url source_dir
+    case "$version" in
+        3.11.15)
+            expected_sha='272179ddd9a2e41a0fc8e42e33dfbdca0b3711aa5abf372d3f2d51543d09b625'
+            ;;
+        *)
+            fail "Python $version is not trusted by the installed control plane; add its python.org source checksum in a separately activated control-plane change first"
+            ;;
+    esac
+    archive="Python-$version.tar.xz"
+    url="https://www.python.org/ftp/python/$version/$archive"
+    source_dir="$WORK/Python-$version"
+    owner_run mkdir -p "$OWNER_HOME/.local/opt"
+    owner_run curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+        --retry 3 --retry-all-errors "$url" --output "$WORK/$archive"
+    printf '%s  %s\n' "$expected_sha" "$WORK/$archive" >"$WORK/python.sha256"
+    sha256sum --check "$WORK/python.sha256"
+    owner_run tar -xJf "$WORK/$archive" -C "$WORK"
+    owner_run bash -c 'cd "$1" && ./configure --prefix="$2" --with-ensurepip=install && make -j2 && make altinstall' \
+        bash "$source_dir" "$PYTHON_PREFIX"
+    [[ -x "$PYTHON_RUNTIME" ]] || fail 'Python altinstall completed without expected interpreter'
+}
+
+if [[ -x "$PYTHON_RUNTIME" ]]; then
+    ACTUAL_PYTHON_VERSION=$($PYTHON_RUNTIME -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
+    [[ "$ACTUAL_PYTHON_VERSION" == "$TARGET_PYTHON_VERSION" ]] \
+        || fail "cached Python runtime version mismatch: $ACTUAL_PYTHON_VERSION"
+    printf 'PYTHON_RUNTIME=REUSED\n'
+else
+    printf 'PYTHON_RUNTIME=INSTALLING\n'
+    install_python_runtime "$TARGET_PYTHON_VERSION"
+    printf 'PYTHON_RUNTIME=INSTALLED\n'
+fi
+printf 'TARGET_PYTHON_VERSION=%s\n' "$TARGET_PYTHON_VERSION"
+
+printf 'PREPARE: candidate venv and exact dependencies\n'
+CANDIDATE_VENV="$WORK/candidate/venv"
+owner_run "$PYTHON_RUNTIME" -m venv "$CANDIDATE_VENV"
+owner_run "$CANDIDATE_VENV/bin/python" -m pip install \
+    --disable-pip-version-check --require-hashes \
+    --requirement "$SOURCE/requirements-bootstrap.txt"
+owner_run "$CANDIDATE_VENV/bin/python" -m pip install \
+    --disable-pip-version-check --require-hashes --no-build-isolation \
+    --requirement "$SOURCE/requirements.txt"
+owner_run "$CANDIDATE_VENV/bin/python" -m pip check
+owner_run env PYTHONPATH="$SOURCE" "$CANDIDATE_VENV/bin/python" "$SOURCE/tools/check_dependency_sync.py"
+owner_run env PYTHONPATH="$SOURCE" "$CANDIDATE_VENV/bin/python" -c \
+    'import collector, digest, hermes_db; assert callable(collector.main); assert callable(digest.main)'
+printf 'CANDIDATE_RUNTIME=PASS\n'
+
+printf 'PREPARE: exact Hugo and staged public tree\n'
+owner_run bash "$SOURCE/tools/install_hugo.sh" "$WORK/hugo/bin"
+owner_run env \
+    HOME="$OWNER_HOME" \
+    HUGO_CACHEDIR="$WORK/hugo-cache" \
+    "$WORK/hugo/bin/hugo" --source "$SOURCE/site" --destination "$WORK/site-new" \
+    --cleanDestinationDir --minify --noBuildLock
+[[ -s "$WORK/site-new/index.html" ]] || fail 'staged Hugo build has no index.html'
+chmod 755 "$WORK/site-new"
+find "$WORK/site-new" -type d -exec chmod 755 {} +
+find "$WORK/site-new" -type f -exec chmod 644 {} +
+[[ "$(stat -c '%a' "$WORK/site-new/index.html")" == 644 ]] || fail 'staged public index mode is not 0644'
+printf 'STAGING_PUBLIC_PERMISSIONS=PASS\n'
+
+printf 'PREPARE: SQLite read-only preflight and online backup\n'
+DB_SHA_BEFORE=$(sha256sum "$PRIMARY/data/hermes.db" | awk '{print $1}')
+owner_run env PYTHONPATH="$SOURCE" "$CANDIDATE_VENV/bin/python" \
+    "$SOURCE/tools/sqlite_schema.py" preflight \
+    --db "$PRIMARY/data/hermes.db" \
+    --evidence "$EVIDENCE_DIR/sqlite-preflight.json" \
+    >"$EVIDENCE_DIR/sqlite-preflight.stdout.json"
+python3 - "$EVIDENCE_DIR/sqlite-preflight.json" <<'PY_SQLITE_PREFLIGHT'
+import json
+import sys
+from pathlib import Path
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if payload.get("needs_change") is not False:
+    raise SystemExit("SQLite schema change is required; runtime rollout refuses to apply it")
+if payload.get("apply_safe") is not True:
+    raise SystemExit("SQLite preflight is not apply-safe")
+if payload.get("quick_check") != "ok":
+    raise SystemExit(f"SQLite quick_check is not ok: {payload.get('quick_check')!r}")
+PY_SQLITE_PREFLIGHT
+DB_BACKUP="$EVIDENCE_DIR/hermes-pre-runtime.sqlite"
+owner_run "$CANDIDATE_VENV/bin/python" - "$PRIMARY/data/hermes.db" "$DB_BACKUP" <<'PY_SQLITE_BACKUP'
+import sqlite3
+import sys
+source_path, backup_path = sys.argv[1:]
+source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True, timeout=30)
+target = sqlite3.connect(backup_path)
+try:
+    source.backup(target)
+    row = target.execute("PRAGMA quick_check").fetchone()
+    if row != ("ok",):
+        raise SystemExit(f"backup quick_check failed: {row!r}")
+finally:
+    target.close()
+    source.close()
+PY_SQLITE_BACKUP
+chmod 0600 "$DB_BACKUP"
+printf 'LIVE_DB_SHA_BEFORE=%s\n' "$DB_SHA_BEFORE"
+printf 'SQLITE_PREFLIGHT=PASS\n'
+printf 'SQLITE_ONLINE_BACKUP=PASS\n'
+
+verify_pending_digest_state || fail 'pending digest bytes changed during preflight'
+verify_database_unchanged || fail 'database changed during preflight'
+
+if [[ "$MODE" == --preflight-only ]]; then
+    restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" \
+        || fail 'failed to restore timer after preflight-only run'
+    SUCCESS=1
+    printf 'RUNTIME_ROLLOUT_PREFLIGHT=PASS\n'
+    printf 'PRODUCTION_CHANGED=false\n'
+    printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+    printf 'PENDING_GENERATED_DIGESTS_PRESERVED=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
+    exit 0
+fi
+
+printf 'MUTATE: backup public tree and rebuild final-path production venv\n'
+rsync -a "$PRIMARY/site/public/" "$WORK/public-before/"
+PUBLIC_BACKUP_READY=1
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+OLD_VENV_BACKUP="$BACKUP_ROOT/venv-$OLD_SHA-$STAMP"
+[[ ! -e "$OLD_VENV_BACKUP" ]] || fail 'old venv backup path already exists'
+[[ -d "$PRIMARY/venv" && ! -L "$PRIMARY/venv" ]] || fail 'production venv is missing or unsafe'
+MUTATION_STARTED=1
+mv -- "$PRIMARY/venv" "$OLD_VENV_BACKUP"
+OLD_VENV_MOVED=1
+chown -R "$OWNER:$(id -gn "$OWNER")" "$OLD_VENV_BACKUP"
+
+owner_run "$PYTHON_RUNTIME" -m venv "$PRIMARY/venv"
+owner_run "$PRIMARY/venv/bin/python" -m pip install \
+    --disable-pip-version-check --require-hashes \
+    --requirement "$SOURCE/requirements-bootstrap.txt"
+owner_run "$PRIMARY/venv/bin/python" -m pip install \
+    --disable-pip-version-check --require-hashes --no-build-isolation \
+    --requirement "$SOURCE/requirements.txt"
+owner_run "$PRIMARY/venv/bin/python" -m pip check
+printf 'FINAL_PATH_VENV=PASS\n'
+
+printf 'MUTATE: fast-forward production Git and apply staged public tree\n'
+owner_git "$PRIMARY" merge --ff-only "$TARGET_SHA" >"$EVIDENCE_DIR/git-apply.log" 2>&1
+GIT_MOVED=1
+[[ "$(owner_git "$PRIMARY" rev-parse HEAD)" == "$TARGET_SHA" ]] || fail 'production Git did not reach target'
+rsync -a --delete "$WORK/site-new/" "$PRIMARY/site/public/" >"$EVIDENCE_DIR/rsync-apply.log" 2>&1
+chown -R "$OWNER:$(id -gn "$OWNER")" "$PRIMARY/site/public"
+chmod 755 "$PRIMARY/site/public"
+find "$PRIMARY/site/public" -type d -exec chmod 755 {} +
+find "$PRIMARY/site/public" -type f -exec chmod 644 {} +
+[[ "$(stat -c '%a' "$PRIMARY/site/public/index.html")" == 644 ]] || fail 'production public index mode is not 0644'
+printf 'PRODUCTION_PUBLIC_PERMISSIONS=PASS\n'
+
+printf 'VERIFY: final runtime, pipeline checks, immutable state and public site\n'
+owner_run "$PRIMARY/venv/bin/python" -m pip check
+owner_run "$PRIMARY/venv/bin/python" "$PRIMARY/tools/check_dependency_sync.py"
+owner_run env HERMES_TECH_ROOT="$PRIMARY" bash "$PRIMARY/run_collector.sh" --check
+owner_run env HERMES_TECH_ROOT="$PRIMARY" bash "$PRIMARY/run_digests.sh" --check
+if (( ${#PENDING_DIGEST_PATHS[@]} > 0 )); then
+    owner_run env HERMES_TECH_ROOT="$PRIMARY" "$PRIMARY/venv/bin/python" "$PRIMARY/digest.py" validate
+    printf 'PENDING_DIGEST_VALIDATION=PASS\n'
+fi
+verify_pending_digest_state || fail 'pending digest bytes changed during runtime rollout'
+verify_database_unchanged || fail 'database bytes changed during runtime rollout'
+curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" >"$EVIDENCE_DIR/post-site.html"
+printf 'PUBLIC_SITE=PASS\n'
+
+if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
+    KEEP_TIMER_DISABLED=1
+    owner_run "$READINESS" record \
+        --state-root "$STATE_ROOT" \
+        --env-file "$PRIMARY/.env" \
+        --reason WAIT_CONTROL_PLANE_APPROVAL \
+        --target-sha "$TARGET_SHA" \
+        --production-sha "$TARGET_SHA" || true
+    printf 'CONTROL_PLANE_ACTIVATION_REQUIRED=true\n'
+else
+    restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" \
+        || fail 'failed to restore pull-deploy timer after runtime rollout'
+    owner_run "$READINESS" record \
+        --state-root "$STATE_ROOT" \
+        --env-file "$PRIMARY/.env" \
+        --reason CURRENT \
+        --target-sha "$TARGET_SHA" \
+        --production-sha "$TARGET_SHA" || true
+    printf 'CONTROL_PLANE_ACTIVATION_REQUIRED=false\n'
+fi
+
+SUCCESS=1
+printf 'RUNTIME_ROLLOUT_RESULT=PASS\n'
+printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+printf 'PRODUCTION_SHA=%s\n' "$(owner_git "$PRIMARY" rev-parse HEAD)"
+printf 'PRODUCTION_PYTHON=%s\n' "$(owner_run "$PRIMARY/venv/bin/python" --version 2>&1)"
+printf 'OLD_VENV_BACKUP=%s\n' "$OLD_VENV_BACKUP"
+printf 'PENDING_GENERATED_DIGESTS_PRESERVED=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
+printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
+printf 'ROLLBACK_PERFORMED=false\n'
+
+if (( KEEP_TIMER_DISABLED == 0 )); then
+    printf 'TIMER_ENABLED=%s\n' "$(systemctl is-enabled hermes-tech-pull-deploy.timer 2>/dev/null || true)"
+    printf 'TIMER_ACTIVE=%s\n' "$(systemctl is-active hermes-tech-pull-deploy.timer 2>/dev/null || true)"
+else
+    printf 'TIMER_ENABLED=disabled\n'
+    printf 'TIMER_ACTIVE=inactive\n'
+fi
