@@ -10,6 +10,8 @@ CI = ROOT / ".github" / "workflows" / "ci.yml"
 OLD_WORKFLOW = ROOT / ".github" / "workflows" / "deploy-main.yml"
 POLLER = ROOT / "tools" / "pull-deploy" / "release" / "hermes-tech-pull-deploy"
 HELPER = ROOT / "tools" / "pull-deploy" / "release" / "hermes-tech-deploy-main"
+CLASSIFIER = ROOT / "tools" / "classify_deploy_impact.py"
+READINESS = ROOT / "tools" / "pull-deploy" / "deploy_readiness.py"
 INSTALLER = ROOT / "tools" / "pull-deploy" / "install-pull-deploy.sh"
 ACTIVATOR = ROOT / "tools" / "pull-deploy" / "activate-pull-deploy.sh"
 REMOVER = ROOT / "tools" / "pull-deploy" / "remove-self-hosted-runner.sh"
@@ -59,9 +61,15 @@ class GitHubMainDeployContractTests(unittest.TestCase):
             'row.get("name") == "validate"',
             "WAIT_CI",
             "WAIT_CONTROL_PLANE_APPROVAL",
+            "RUNTIME_ROLLOUT_REQUIRED",
+            "DB_APPLY_REQUIRES_SEPARATE_APPROVAL",
+            "DEPLOY_FAILED",
             "merge-base --is-ancestor",
             "sudo --non-interactive",
             "/usr/local/sbin/hermes-tech-deploy-main",
+            "/usr/local/libexec/hermes-tech/classify-deploy-impact",
+            "/usr/local/libexec/hermes-tech/deploy-readiness",
+            "record_readiness",
         ):
             self.assertIn(marker, text)
 
@@ -69,20 +77,38 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertNotIn("git reset --hard", text)
         self.assertNotIn("production checkout is not clean", text)
 
-    def test_control_plane_changes_require_exact_sha_activation(self) -> None:
+    def test_control_plane_changes_use_canonical_classifier_and_exact_sha_activation(self) -> None:
         poller = read(POLLER)
+        classifier = read(CLASSIFIER)
         activator = read(ACTIVATOR)
         doc = read(DOC)
 
         for marker in (
-            ".github/workflows/*",
-            "tools/pull-deploy/*",
-            "approved-control-plane-sha",
+            'path.startswith(".github/workflows/")',
+            'path.startswith("tools/pull-deploy/")',
+            '"tools/ci.sh", "tools/classify_deploy_impact.py"',
+            "hermes-tech-pull-deploy.service",
+            "hermes-tech-pull-deploy.timer",
         ):
-            self.assertIn(marker, poller)
+            self.assertIn(marker, classifier)
 
+        self.assertIn("installed-control-plane-sha", poller)
+        self.assertIn("approved-control-plane-sha", poller)
+        self.assertIn("classify_range", poller)
+        self.assertNotIn("mapfile -t changed_paths", poller)
         self.assertIn('printf \'%s\\n\' "$HEAD_SHA" >"$CONTROL_APPROVAL"', activator)
         self.assertIn("exact-SHA local approval", doc)
+
+    def test_readiness_notifications_are_transition_aware_and_secret_safe(self) -> None:
+        text = read(READINESS)
+        self.assertIn("READINESS_STATE={'CHANGED' if changed else 'UNCHANGED'}", text)
+        self.assertIn("TELEGRAM_BOT_TOKEN", text)
+        self.assertIn("TELEGRAM_CHAT_ID", text)
+        self.assertIn("[REDACTED]", text)
+        self.assertIn("disable_web_page_preview", text)
+        self.assertIn("production is not publish-ready", text)
+        self.assertIn("production is current again", text)
+        self.assertNotIn("requests", text)
 
     def test_root_helper_serializes_with_publisher_and_rolls_back(self) -> None:
         text = read(HELPER)
@@ -166,6 +192,10 @@ class GitHubMainDeployContractTests(unittest.TestCase):
             "andris ALL=(root) NOPASSWD: /usr/local/sbin/hermes-tech-deploy-main *",
             installer,
         )
+        self.assertIn("/usr/local/libexec/hermes-tech", installer)
+        self.assertIn("classify-deploy-impact", installer)
+        self.assertIn("deploy-readiness", installer)
+        self.assertIn("installed-control-plane-sha", installer)
         self.assertIn("PRODUCTION_CHANGED=false", installer)
         self.assertNotIn("systemctl enable --now", installer)
 

@@ -24,7 +24,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -55,6 +55,7 @@ jobs:
 
       - name: Validate repository
         env:
+          HERMES_TECH_BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
           HERMES_TECH_ROOT: ${{ github.workspace }}
           HERMES_TECH_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: bash tools/ci.sh
