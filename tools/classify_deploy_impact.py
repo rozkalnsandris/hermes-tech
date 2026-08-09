@@ -75,6 +75,7 @@ def _is_control_plane(path: str) -> bool:
     return (
         path.startswith(".github/workflows/")
         or path.startswith("tools/pull-deploy/")
+        or path in {"tools/ci.sh", "tools/classify_deploy_impact.py"}
         or path
         in {
             "ops/systemd/hermes-tech-pull-deploy.service",
