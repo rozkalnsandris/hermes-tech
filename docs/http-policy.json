@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "cache_control": {
     "fingerprinted_css": "public, max-age=31536000, immutable",
     "html": "no-cache",
@@ -10,6 +10,28 @@
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "X-Content-Type-Options": "nosniff"
+  },
+  "edge_transport": {
+    "owner": "cloudflare_edge",
+    "hostname": "tech.rozkalns.net",
+    "https_redirect": {
+      "required": true,
+      "scope": "hostname",
+      "source_scheme": "http",
+      "target_scheme": "https",
+      "status_code": 301,
+      "preserve_path": true,
+      "preserve_query_string": true
+    },
+    "hsts": {
+      "required": true,
+      "https_only": true,
+      "header_name": "Strict-Transport-Security",
+      "header_value": "max-age=15552000",
+      "max_age_seconds": 15552000,
+      "include_subdomains": false,
+      "preload": false
+    }
   },
   "stable_metadata_paths": [
     "/index.xml",
