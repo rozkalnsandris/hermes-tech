@@ -24,7 +24,7 @@ def local_reference(value: str) -> bool:
 class HttpPolicyContractTests(unittest.TestCase):
     def test_machine_readable_policy_is_strict_and_explicit(self) -> None:
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(policy["schema_version"], 1)
+        self.assertEqual(policy["schema_version"], 2)
         self.assertEqual(
             policy["cache_control"]["fingerprinted_css"],
             "public, max-age=31536000, immutable",
@@ -39,6 +39,7 @@ class HttpPolicyContractTests(unittest.TestCase):
             headers["Permissions-Policy"],
             "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
         )
+        self.assertNotIn("Strict-Transport-Security", headers)
         csp = headers["Content-Security-Policy"]
         for directive in (
             "default-src 'none'",
@@ -54,6 +55,30 @@ class HttpPolicyContractTests(unittest.TestCase):
             self.assertIn(directive, csp)
         self.assertNotIn("'unsafe-inline'", csp)
         self.assertNotIn("'unsafe-eval'", csp)
+
+    def test_cloudflare_edge_transport_is_hostname_scoped_and_conservative(self) -> None:
+        policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+        edge = policy["edge_transport"]
+        self.assertEqual(edge["owner"], "cloudflare_edge")
+        self.assertEqual(edge["hostname"], "tech.rozkalns.net")
+
+        redirect = edge["https_redirect"]
+        self.assertTrue(redirect["required"])
+        self.assertEqual(redirect["scope"], "hostname")
+        self.assertEqual(redirect["source_scheme"], "http")
+        self.assertEqual(redirect["target_scheme"], "https")
+        self.assertEqual(redirect["status_code"], 301)
+        self.assertTrue(redirect["preserve_path"])
+        self.assertTrue(redirect["preserve_query_string"])
+
+        hsts = edge["hsts"]
+        self.assertTrue(hsts["required"])
+        self.assertTrue(hsts["https_only"])
+        self.assertEqual(hsts["header_name"], "Strict-Transport-Security")
+        self.assertEqual(hsts["header_value"], "max-age=15552000")
+        self.assertEqual(hsts["max_age_seconds"], 15552000)
+        self.assertFalse(hsts["include_subdomains"])
+        self.assertFalse(hsts["preload"])
 
     def test_generated_site_matches_strict_csp_assumptions(self) -> None:
         with tempfile.TemporaryDirectory(prefix="hermes-tech-http-policy-") as temporary:
