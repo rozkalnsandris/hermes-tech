@@ -9,6 +9,8 @@ readonly EXIT_SYNC=76
 readonly REMOTE="${HERMES_GIT_SYNC_REMOTE:-origin}"
 readonly BRANCH="${HERMES_GIT_SYNC_BRANCH:-main}"
 readonly NETWORK_TIMEOUT="${HERMES_GIT_SYNC_TIMEOUT_SECONDS:-20}"
+readonly PUSH_ATTEMPTS="${HERMES_GIT_SYNC_PUSH_ATTEMPTS:-3}"
+readonly PUSH_RETRY_DELAY="${HERMES_GIT_SYNC_PUSH_RETRY_DELAY_SECONDS:-2}"
 
 usage() {
     cat >&2 <<'USAGE'
@@ -30,12 +32,18 @@ require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "nav atrasta komanda '$1'"
 }
 
-for command_name in git timeout; do
+for command_name in git timeout grep sleep; do
     require_command "$command_name"
 done
 
 [[ "$NETWORK_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || fail \
     "HERMES_GIT_SYNC_TIMEOUT_SECONDS jābūt pozitīvam veselam skaitlim"
+[[ "$PUSH_ATTEMPTS" =~ ^[1-5]$ ]] || fail \
+    "HERMES_GIT_SYNC_PUSH_ATTEMPTS jābūt veselam skaitlim 1..5"
+[[ "$PUSH_RETRY_DELAY" =~ ^[0-9]+$ ]] || fail \
+    "HERMES_GIT_SYNC_PUSH_RETRY_DELAY_SECONDS jābūt nenegatīvam veselam skaitlim"
+(( PUSH_RETRY_DELAY <= 60 )) || fail \
+    "HERMES_GIT_SYNC_PUSH_RETRY_DELAY_SECONDS nedrīkst pārsniegt 60"
 
 [[ $# -ge 4 ]] || usage
 mode=$1
@@ -92,12 +100,29 @@ network_git() {
     timeout --signal=TERM --kill-after=5s "${NETWORK_TIMEOUT}s" git "$@"
 }
 
-fetch_remote() {
+fetch_remote_nonfatal() {
     network_git fetch --quiet --no-tags "$REMOTE" \
-        "refs/heads/$BRANCH:refs/remotes/$REMOTE/$BRANCH" || fail \
+        "refs/heads/$BRANCH:refs/remotes/$REMOTE/$BRANCH" || return 1
+    git show-ref --verify --quiet "refs/remotes/$REMOTE/$BRANCH" || return 1
+}
+
+fetch_remote() {
+    fetch_remote_nonfatal || fail \
         "neizdevās droši nolasīt $REMOTE/$BRANCH"
-    git show-ref --verify --quiet "refs/remotes/$REMOTE/$BRANCH" || fail \
-        "pēc fetch nav pieejams refs/remotes/$REMOTE/$BRANCH"
+}
+
+is_retryable_push_failure() {
+    local push_rc=$1
+    local output=$2
+
+    # GNU timeout reports 124 when the bounded network command expires.
+    (( push_rc == 124 )) && return 0
+
+    # Retry only transport-shaped failures. Explicit authentication,
+    # authorization, hook, ruleset, and non-fast-forward failures stay closed.
+    grep -Eqi \
+        'Connection (closed|reset|timed out|refused)|Connection to .* (closed|timed out)|Could not resolve hostname|Network is unreachable|Operation timed out|Broken pipe|kex_exchange_identification|ssh_exchange_identification' \
+        <<<"$output"
 }
 
 is_commit_path() {
@@ -274,9 +299,45 @@ case "$mode" in
         [[ "$remote_sha" == "$expected_base" ]] || relation_error \
             "$expected_commit" "$remote_sha"
 
-        network_git push --porcelain "$REMOTE" \
-            "$expected_commit:refs/heads/$BRANCH" >/dev/null || fail \
-            "fast-forward push uz $REMOTE/$BRANCH neizdevās; lokālais commits $expected_commit ir saglabāts"
+        push_attempt=1
+        while :; do
+            set +e
+            push_output=$(network_git push --porcelain "$REMOTE" \
+                "$expected_commit:refs/heads/$BRANCH" 2>&1)
+            push_rc=$?
+            set -e
+            [[ -z "$push_output" ]] || printf '%s\n' "$push_output" >&2
+
+            if (( push_rc == 0 )); then
+                break
+            fi
+
+            # A transport break can happen after the server accepted the ref.
+            # Re-read the authoritative remote before deciding whether to retry.
+            if fetch_remote_nonfatal; then
+                remote_sha=$(git rev-parse "refs/remotes/$REMOTE/$BRANCH")
+                if [[ "$remote_sha" == "$expected_commit" ]]; then
+                    printf 'HERMES_GIT_SYNC_RECONCILED remote=%s attempt=%d\n' \
+                        "$remote_sha" "$push_attempt" >&2
+                    break
+                fi
+                [[ "$remote_sha" == "$expected_base" ]] || relation_error \
+                    "$expected_commit" "$remote_sha"
+            fi
+
+            if ! is_retryable_push_failure "$push_rc" "$push_output"; then
+                fail "fast-forward push uz $REMOTE/$BRANCH neizdevās; lokālais commits $expected_commit ir saglabāts"
+            fi
+
+            if (( push_attempt >= PUSH_ATTEMPTS )); then
+                fail "fast-forward push uz $REMOTE/$BRANCH neizdevās pēc $push_attempt transporta mēģinājumiem; lokālais commits $expected_commit ir saglabāts"
+            fi
+
+            printf 'HERMES_GIT_SYNC_RETRY attempt=%d/%d remote=%s\n' \
+                "$push_attempt" "$PUSH_ATTEMPTS" "$REMOTE" >&2
+            (( PUSH_RETRY_DELAY == 0 )) || sleep "$PUSH_RETRY_DELAY"
+            push_attempt=$((push_attempt + 1))
+        done
 
         fetch_remote
         remote_sha=$(git rev-parse "refs/remotes/$REMOTE/$BRANCH")
