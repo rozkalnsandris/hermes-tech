@@ -3,7 +3,10 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
-SYNC_SCRIPT=${1:-/tmp/sync_generated_content.new.sh}
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+SYNC_SCRIPT=${1:-"$REPO_ROOT/sync_generated_content.sh"}
+[[ -f "$SYNC_SCRIPT" ]] || { echo "missing sync script: $SYNC_SCRIPT" >&2; exit 2; }
+
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 REAL_GIT=$(command -v git)
