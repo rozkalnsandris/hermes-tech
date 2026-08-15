@@ -20,6 +20,7 @@ EVIDENCE_ROOT="$STATE_ROOT/evidence"
 CONTROL_APPROVAL="$STATE_ROOT/approved-control-plane-sha"
 INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"
 LOCK_FILE="$STATE_ROOT/poll.lock"
+PUBLISH_LOCK="$PRIMARY/.publish.lock"
 HELPER='/usr/local/sbin/hermes-tech-deploy-main'
 CLASSIFIER='/usr/local/libexec/hermes-tech/classify-deploy-impact'
 READINESS='/usr/local/libexec/hermes-tech/deploy-readiness'
@@ -80,6 +81,18 @@ print("true" if control else "false")
 '
 }
 
+# The production publisher and the root deploy helper already serialize checkout
+# mutation through .publish.lock. Take the same lock while capturing the poller's
+# target/production snapshot so a scheduled poll cannot observe the publisher
+# halfway between advancing production HEAD and pushing the generated commit.
+# If a publication owns the lock, defer this poll without changing readiness.
+[[ ! -L "$PUBLISH_LOCK" ]] || fail 'publish lock path is unsafe'
+exec 8>"$PUBLISH_LOCK"
+if ! flock -n 8; then
+    printf 'PULL_DEPLOY_RESULT=NO_OP_PUBLISH_BUSY\n'
+    exit 0
+fi
+
 git -C "$SOURCE" fetch --prune origin main
 [[ -z "$(git -C "$SOURCE" branch --show-current)" ]] || fail 'release-control worktree must remain detached'
 [[ -z "$(git -C "$SOURCE" status --porcelain=v1 --untracked-files=all)" ]] \
@@ -129,6 +142,13 @@ git -C "$SOURCE" merge-base --is-ancestor "$PRODUCTION_SHA" "$TARGET_SHA" || {
     record_readiness 'DEPLOY_FAILED' "$TARGET_SHA" "$PRODUCTION_SHA" 'UNCLASSIFIED'
     fail 'production SHA is not an ancestor of current origin/main'
 }
+
+# From this point the coherent snapshot proves that production is genuinely
+# behind current main. A publisher cannot validly mutate this checkout until the
+# normal publication preflight sees production current again, so the short
+# snapshot lock is no longer needed. The root deploy helper reacquires the same
+# lock immediately before any production mutation.
+flock -u 8
 
 IMPACT_JSON=$(classify_range "$PRODUCTION_SHA" "$TARGET_SHA") \
     || fail 'cannot classify production-to-main deploy impact'
