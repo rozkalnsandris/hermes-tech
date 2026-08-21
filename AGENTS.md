@@ -67,3 +67,18 @@ For Hermes Tech digest-specific procedures, use the installed skill:
 Its editorial review reference is:
 
 `~/.hermes/skills/devops/hermes-tech-digest/references/editorial-review.md`
+
+<!-- BEGIN FAST-LANE-V2.1-MANAGED -->
+## FAST-LANE v2.1 Hybrid
+
+Use `docs/FAST_LANE_V2_1.md` for the local adoption of the shared cross-project policy.
+
+- FAST is source-only work through Ready with no live publish/deploy/restart or trust-boundary activation.
+- A FAST PR may batch 2-5 closely related same-risk work items when they form one coherent acceptance story.
+- After initial publication, at most two scope-preserving corrective commits may address CI/review findings; a third correction or material scope/risk expansion requires STOP.
+- Use one Ready receipt, then refresh mutable state immediately before merge.
+- STRICT includes publishing/deploying content, service/runtime mutation, secrets/credentials, host/root, Cloudflare and equivalent live authority.
+- Merge remains explicit owner authority and never authorizes production publication/deployment.
+
+Existing Hermes Tech editorial and production safety rules remain stricter where applicable.
+<!-- END FAST-LANE-V2.1-MANAGED -->
