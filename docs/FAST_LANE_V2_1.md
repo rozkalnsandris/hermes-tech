@@ -1,19 +1,29 @@
-# FAST-LANE v2.1 Hybrid — Hermes Tech
+# FAST-LANE v2.2 Composite — Hermes Tech
 
-Hermes Tech adopts the shared `rozkalnsandris/ops-workflows` FAST/STRICT delivery vocabulary.
+> Compatibility path: `AGENTS.md` already points to this v2.1 filename; these are the authoritative v2.2 rules.
+
+## Core rule
+
+**The human approves the RISK / DECISION. Automation executes the TECHNICAL STEPS.** Read-only checkpoints never create owner gates; STRICT is a live-risk classification, not a prompt-per-command workflow.
 
 ## FAST
 
-Documentation, editorial prompt/source changes, tests, static-site/source work and deterministic refactors are FAST when they do not publish content, restart services, deploy production, change secrets, or expand runtime authority.
+Documentation, editorial/source changes, tests, static-site/source work and deterministic refactors may proceed from fresh GitHub state through Ready in one batch, including branch, PR, CI/review and up to two scope-preserving corrections. Batch 2-5 closely related same-risk items when coherent. Merge remains explicit.
 
-FAST may batch 2-5 closely related same-risk work items and may proceed from fresh state through Ready in one source-only execution batch. At most two scope-preserving corrective commits may follow CI/review findings.
+## Human gate budget and Composite STRICT
 
-## STRICT
+Normal delivery has at most two owner gates: **MERGE**, then **COMPOSITE LIVE** only when publication/deploy/runtime mutation is required. Before the live gate, automation gathers all read-only evidence. One bounded live authorization binds exact SHA, target, allowed mutation categories, limits and exclusions; preflight and technical verification run inside one fail-closed one-shot.
 
-Publishing content, production deploy, service restart/reload, host/root changes, secrets/credentials, Cloudflare or other live state changes require separate explicit owner authorization.
+Where artifacts/versions apply, use pinned tooling, build once, verify the exact candidate, re-check baseline/drift and deploy the exact verified artifact/version. Do not silently switch to newer `main`.
 
-## CI and evidence
+## Local STRICT boundaries
 
-The current CI is already a single coherent repository validation pipeline, so Phase 1 keeps it intact rather than adding unnecessary classification complexity. Use one complete Ready receipt and refresh mutable merge evidence only at merge time.
+Publishing content, production deploy, service restart/reload, host/root mutation, secrets/credentials, Cloudflare changes or other live state mutation require the Composite Live authorization.
 
-Merge remains an explicit owner gate and never authorizes publish/deploy/runtime mutation.
+## Failure and evidence
+
+Authorization is consumed at the first mutation. Any later error/ambiguity requires evidence preservation and STOP; no automatic retry, rollback, cleanup or alternate mutation path unless explicitly pre-authorized.
+
+Use one Ready receipt and one final live receipt. Put the remaining owner decision only at the **end** under `ACTION REQUIRED`; when something must be entered/run, show the exact copyable instruction in a fenced `bash` block.
+
+Merge never authorizes publish/deploy/runtime mutation.
