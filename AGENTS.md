@@ -103,3 +103,19 @@ Canonical shared contract: `rozkalnsandris/ops-workflows/docs/GITHUB_ONLY_LIVE_A
 - After any selected live mutation starts, error/ambiguity requires public-safe evidence preservation and STOP of the remaining batch; no automatic retry/rollback/cleanup/alternate mutation path unless explicitly pre-authorized.
 - Existing Hermes Tech editorial and production safety rules remain authoritative and stricter where applicable.
 <!-- END GITHUB-ONLY-LIVE-ALL-V1-MANAGED -->
+
+<!-- BEGIN START-GITHUB-ONLY-V1-MANAGED -->
+## START_GITHUB_ONLY_V1 deterministic bootstrap amendment
+
+Startup contract: `rozkalnsandris/ops-workflows/docs/START_GITHUB_ONLY_V1.md`.
+Repository manifest: `.github/start-github-only.json`.
+
+- `START <repository> GITHUB-ONLY` refreshes local rules/handoff, the pinned shared policy and START contract, current default branch/governance capability, active PRs, active issues/dependencies, and relevant deploy-queue items before selecting the manifest-defined canonical lane.
+- Revalidate mutable GitHub state immediately before every state-dependent write.
+- The absence of an open issue alone is NOT a STOP condition. Do not invent speculative work.
+- If declared tie-breakers cannot resolve equally authoritative lanes, report `AMBIGUOUS_CANONICAL_LANE` instead of choosing arbitrarily.
+- Final routing is one of `READY_FOR_MERGE`, `PARKED`, `STOP_ERROR`, `NEW_SCOPE_OR_RISK`, `AMBIGUOUS_CANONICAL_LANE`, or `IDLE`.
+- `PARKED` is session-only. **EXECUTOR** availability is session capability, not **READY** rollout eligibility.
+- Executor unavailability alone must not change `READY` to `BLOCKED`; use `BLOCKED` only for rollout eligibility or contract failure.
+- Repository-local stricter editorial, publication and production-safety rules remain authoritative.
+<!-- END START-GITHUB-ONLY-V1-MANAGED -->
