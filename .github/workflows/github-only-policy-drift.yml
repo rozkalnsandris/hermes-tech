@@ -1,0 +1,18 @@
+name: GITHUB-ONLY policy drift
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  github-only-policy-drift:
+    name: GITHUB-ONLY policy drift
+    uses: rozkalnsandris/ops-workflows/.github/workflows/github-only-policy-drift.yml@00e899260c168ef9c2ebe4c7ee41195f4fdcda32
+    with:
+      canonical_policy_sha: 00e899260c168ef9c2ebe4c7ee41195f4fdcda32

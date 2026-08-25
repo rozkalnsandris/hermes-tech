@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "repository": "rozkalnsandris/hermes-tech",
+  "default_branch": "main",
+  "shared_policy": {
+    "repository": "rozkalnsandris/ops-workflows",
+    "contract": "GITHUB-ONLY / LIVE-ALL v1",
+    "startup_contract": "START GITHUB-ONLY v1",
+    "minimum_machine_schema": 2,
+    "adoption_version": "2026-08-25.2"
+  },
+  "authority": {
+    "repository_rules": ["AGENTS.md"],
+    "master_sources": [],
+    "local_rules_override_when_stricter": true
+  },
+  "continuation": {
+    "precedence": [
+      "explicit_current_handoff",
+      "active_focused_pr_blocking_current_phase",
+      "active_issue_declared_as_current",
+      "deploy_queue_source_reconciliation",
+      "explicitly_ordered_next_roadmap_item"
+    ],
+    "tie_breakers": ["explicit_phase_priority", "explicit_dependency_order"],
+    "unresolved_tie_result": "AMBIGUOUS_CANONICAL_LANE",
+    "no_candidate_result": "IDLE",
+    "excluded_labels": ["automation-fixture", "do-not-merge", "superseded", "parked-historical"]
+  },
+  "source_work": {
+    "default_branch_direct_writes": false,
+    "bounded_correction_limit": 2,
+    "jit_revalidation": true
+  },
+  "merge": {
+    "method": "squash",
+    "explicit_owner_authorization": true,
+    "bind_expected_head_sha": true,
+    "require_current_head_revalidation": true,
+    "require_exact_head_ci": true,
+    "require_review_thread_resolution": true,
+    "auto_merge": false
+  },
+  "deploy": {
+    "queue_repository": "rozkalnsandris/ops-workflows",
+    "queue_prefix": "[DEPLOY-QUEUE]",
+    "executor_classes": ["trusted-home-host", "repository-defined-trusted-executor"],
+    "executor_capability_affects_readiness": false
+  },
+  "security": {
+    "repository_is_public": true,
+    "public_queue_forbidden_content": ["secrets", "credentials", "protected_configuration", "sensitive_logs"]
+  }
+}

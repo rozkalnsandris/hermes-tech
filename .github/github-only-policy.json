@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "policy": "GITHUB-ONLY / LIVE-ALL v1",
+  "canonical_repository": "rozkalnsandris/ops-workflows",
+  "startup_contract": "START GITHUB-ONLY v1",
+  "adoption_version": "2026-08-25.2",
+  "invariants": {
+    "start_step_count": 10,
+    "open_issue_required": false,
+    "invent_speculative_work_when_idle": false,
+    "unresolved_tie_result": "AMBIGUOUS_CANONICAL_LANE",
+    "parked_is_queue_state": false,
+    "executor_capability_affects_readiness": false,
+    "executor_unavailable_alone_is_blocked": false,
+    "merge_requires_explicit_owner_authorization": true,
+    "auto_merge": false,
+    "direct_default_branch_content_writes": false,
+    "live_mutation_allowed_under_github_only": false,
+    "no_executable_live_all_consumes_authorization": false
+  }
+}
