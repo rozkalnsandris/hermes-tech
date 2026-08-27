@@ -153,7 +153,13 @@ class RuntimeRootContractTests(unittest.TestCase):
         self.fixture.mkdir()
         self.root.mkdir()
 
-        for name in ("hermes_runtime.py", "digest.py", "collector.py", "ogcard.py"):
+        for name in (
+            "hermes_runtime.py",
+            "digest.py",
+            "digest_publish.py",
+            "collector.py",
+            "ogcard.py",
+        ):
             shutil.copy2(REPO / name, self.fixture / name)
         (self.fixture / "digest_core.py").write_text(FAKE_DIGEST_CORE, encoding="utf-8")
         (self.fixture / "collector_core.py").write_text(FAKE_COLLECTOR_CORE, encoding="utf-8")
@@ -266,7 +272,7 @@ class RuntimeRootContractTests(unittest.TestCase):
             cwd=self.fixture,
             env=self.env(),
         )
-        self.assertEqual(ogcard.returncode, 0, ogcard.stderr)
+        self.assertEqual(ogcard.returncode, 0, proc.stderr)
         self.assertIn(f"ROOT={self.root}", ogcard.stdout)
         self.assertIn(f"OUT={self.root / 'site' / 'static' / 'og'}", ogcard.stdout)
 
