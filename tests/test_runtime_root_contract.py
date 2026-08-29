@@ -272,7 +272,7 @@ class RuntimeRootContractTests(unittest.TestCase):
             cwd=self.fixture,
             env=self.env(),
         )
-        self.assertEqual(ogcard.returncode, 0, proc.stderr)
+        self.assertEqual(ogcard.returncode, 0, ogcard.stderr)
         self.assertIn(f"ROOT={self.root}", ogcard.stdout)
         self.assertIn(f"OUT={self.root / 'site' / 'static' / 'og'}", ogcard.stdout)
 
