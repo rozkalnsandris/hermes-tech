@@ -125,6 +125,20 @@ def _install_notification_contracts() -> None:
     install_notification_contracts(_core)
 
 
+def _install_publish_contracts() -> None:
+    if not hasattr(_core, "step_publish"):
+        return
+    from digest_publish import install_publish_exit_contracts
+
+    install_publish_exit_contracts(_core)
+    installed = getattr(_core, "step_publish", None)
+    if not callable(installed) or installed.__module__ != "digest_publish":
+        raise RuntimeError(
+            "publish exit-code contract installation failed closed: "
+            f"owner={getattr(installed, '__module__', None)!r}"
+        )
+
+
 try:
     PATHS = RuntimePaths.from_env()
 except RuntimeConfigError as exc:
@@ -141,6 +155,7 @@ _install_grounding_evidence_contracts()
 _install_digest_response_resilience_contracts()
 _install_diversity_contracts()
 _install_notification_contracts()
+_install_publish_contracts()
 _export_core_api()
 
 
