@@ -136,17 +136,20 @@ conn.executescript(
         id INTEGER PRIMARY KEY,
         source TEXT NOT NULL,
         primary_category TEXT,
-        digest_date TEXT
+        digest_date TEXT,
+        topic_key TEXT
     );
     CREATE TABLE sources (
         name TEXT PRIMARY KEY,
         picked INTEGER NOT NULL DEFAULT 0
     );
     INSERT INTO sources(name, picked) VALUES ('test-source', 0);
-    INSERT INTO articles(id, source, primary_category, digest_date) VALUES
-        (1, 'test-source', 'devops', NULL),
-        (2, 'test-source', 'devops', NULL),
-        (3, 'test-source', 'devops', NULL);
+    INSERT INTO articles(
+        id, source, primary_category, digest_date, topic_key
+    ) VALUES
+        (1, 'test-source', 'devops', NULL, 'rollback-topic-1'),
+        (2, 'test-source', 'devops', NULL, 'rollback-topic-2'),
+        (3, 'test-source', 'devops', NULL, 'rollback-topic-3');
     """
 )
 conn.commit()
