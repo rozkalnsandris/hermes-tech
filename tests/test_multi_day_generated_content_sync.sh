@@ -59,18 +59,18 @@ prod="$TMP/multi-day-prod"
 clone_remote "$remote" "$prod"
 
 for spec in \
-    '2026-08-26 ai' \
-    '2026-08-26 devops' \
-    '2026-08-27 agents' \
-    '2026-08-27 ai' \
-    '2026-08-27 devops' \
-    '2026-08-28 agents' \
-    '2026-08-28 ai' \
-    '2026-08-28 devops' \
-    '2026-08-29 agents' \
-    '2026-08-29 ai' \
-    '2026-08-29 devops'; do
-    read -r date category <<<"$spec"
+    '2026-08-26|ai' \
+    '2026-08-26|devops' \
+    '2026-08-27|agents' \
+    '2026-08-27|ai' \
+    '2026-08-27|devops' \
+    '2026-08-28|agents' \
+    '2026-08-28|ai' \
+    '2026-08-28|devops' \
+    '2026-08-29|agents' \
+    '2026-08-29|ai' \
+    '2026-08-29|devops'; do
+    IFS='|' read -r date category <<<"$spec"
     write_digest "$prod" "$date" "$category"
 done
 
