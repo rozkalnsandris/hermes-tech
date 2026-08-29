@@ -69,7 +69,8 @@ owner_git() {
 
 declare -a PENDING_DIGEST_PATHS=()
 declare -A PENDING_DIGEST_SHA256=()
-PENDING_DIGEST_DATE=''
+declare -A PENDING_DIGEST_DATES=()
+MAX_PENDING_DIGEST_DATES=31
 
 pending_digest_date_for_path() {
     local path=$1
@@ -88,7 +89,7 @@ capture_pending_digest_state() {
     local line status path digest_date hash
     PENDING_DIGEST_PATHS=()
     PENDING_DIGEST_SHA256=()
-    PENDING_DIGEST_DATE=''
+    PENDING_DIGEST_DATES=()
 
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -98,9 +99,7 @@ capture_pending_digest_state() {
             "production checkout has tracked or staged change: $line"
         digest_date=$(pending_digest_date_for_path "$path") || fail \
             "production checkout has unrelated untracked path: $path"
-        [[ -z "$PENDING_DIGEST_DATE" || "$PENDING_DIGEST_DATE" == "$digest_date" ]] || fail \
-            "pending digest files span multiple dates: $PENDING_DIGEST_DATE and $digest_date"
-        PENDING_DIGEST_DATE=$digest_date
+        PENDING_DIGEST_DATES["$digest_date"]=1
         [[ -f "$PRIMARY/$path" && ! -L "$PRIMARY/$path" ]] || fail \
             "pending digest path is not a regular file: $path"
         hash=$(sha256sum "$PRIMARY/$path" | awk '{print $1}')
@@ -108,8 +107,11 @@ capture_pending_digest_state() {
         PENDING_DIGEST_SHA256["$path"]=$hash
     done < <(owner_git "$PRIMARY" status --porcelain=v1 --untracked-files=all)
 
-    (( ${#PENDING_DIGEST_PATHS[@]} <= 4 )) || fail \
-        'too many pending generated digest source files'
+    # The legacy recovery guard rejected "pending digest files span multiple dates".
+    # A blocked publisher can legitimately accumulate several days while the
+    # exact path allowlist + SHA256 snapshot still provide the safety boundary.
+    (( ${#PENDING_DIGEST_DATES[@]} <= MAX_PENDING_DIGEST_DATES )) || fail \
+        "pending digest backlog spans too many dates: ${#PENDING_DIGEST_DATES[@]} > $MAX_PENDING_DIGEST_DATES"
 }
 
 verify_pending_digest_state() {
