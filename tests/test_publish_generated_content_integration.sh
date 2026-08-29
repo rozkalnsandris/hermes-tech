@@ -118,8 +118,17 @@ Second body.
 
 Third body.
 MD_DIGEST
-printf 'pending ai\n' > "$prod/digests/2026-08-05-ai.md"
-printf 'pending agents\n' > "$prod/digests/2026-08-05-agents.md"
+
+# Real pending sibling drafts must carry selected_ids metadata. They remain
+# untracked and must not leak into the DevOps publication commit.
+cat > "$prod/digests/2026-08-05-ai.md" <<'MD_AI'
+<!-- selected_ids: 4,5,6 -->
+# Pending AI
+MD_AI
+cat > "$prod/digests/2026-08-05-agents.md" <<'MD_AGENTS'
+<!-- selected_ids: 7,8,9 -->
+# Pending Agents
+MD_AGENTS
 
 python3 - "$prod/data/hermes.db" <<'PY_DB_CREATE'
 import sqlite3
@@ -132,17 +141,26 @@ conn.executescript(
         id INTEGER PRIMARY KEY,
         source TEXT NOT NULL,
         primary_category TEXT,
-        digest_date TEXT
+        digest_date TEXT,
+        topic_key TEXT
     );
     CREATE TABLE sources (
         name TEXT PRIMARY KEY,
         picked INTEGER NOT NULL DEFAULT 0
     );
     INSERT INTO sources(name, picked) VALUES ('test-source', 0);
-    INSERT INTO articles(id, source, primary_category, digest_date) VALUES
-        (1, 'test-source', 'devops', NULL),
-        (2, 'test-source', 'devops', NULL),
-        (3, 'test-source', 'devops', NULL);
+    INSERT INTO articles(
+        id, source, primary_category, digest_date, topic_key
+    ) VALUES
+        (1, 'test-source', 'devops', NULL, 'devops-one'),
+        (2, 'test-source', 'devops', NULL, 'devops-two'),
+        (3, 'test-source', 'devops', NULL, 'devops-three'),
+        (4, 'test-source', 'ai', NULL, 'ai-one'),
+        (5, 'test-source', 'ai', NULL, 'ai-two'),
+        (6, 'test-source', 'ai', NULL, 'ai-three'),
+        (7, 'test-source', 'agents', NULL, 'agents-one'),
+        (8, 'test-source', 'agents', NULL, 'agents-two'),
+        (9, 'test-source', 'agents', NULL, 'agents-three');
     """
 )
 conn.commit()
@@ -160,6 +178,9 @@ if (( publish_rc != 0 )); then
     cat "$TMP/publish.err" >&2 || true
     fail "publish.sh integration failed with rc=$publish_rc"
 fi
+
+grep -q 'PENDING_DIGEST_PREFLIGHT=PASS' "$TMP/publish.out" || \
+    fail 'publish.sh did not report pending-digest preflight PASS'
 
 publish_head=$(git -C "$prod" rev-parse HEAD)
 publish_remote_head=$(git --git-dir="$remote" rev-parse refs/heads/main)
@@ -180,6 +201,10 @@ git --git-dir="$remote" show \
 if git --git-dir="$remote" cat-file -e \
     "$publish_remote_head:digests/2026-08-05-ai.md" 2>/dev/null; then
     fail 'publish.sh leaked a sibling digest into the publication commit'
+fi
+if git --git-dir="$remote" cat-file -e \
+    "$publish_remote_head:digests/2026-08-05-agents.md" 2>/dev/null; then
+    fail 'publish.sh leaked an agents sibling into the publication commit'
 fi
 
 [[ "$(sed -n '1p' "$published_content")" == '---' ]] || \
@@ -212,7 +237,17 @@ picked = conn.execute(
 ).fetchone()[0]
 conn.close()
 
-expected = [(1, '2026-08-05'), (2, '2026-08-05'), (3, '2026-08-05')]
+expected = [
+    (1, '2026-08-05'),
+    (2, '2026-08-05'),
+    (3, '2026-08-05'),
+    (4, None),
+    (5, None),
+    (6, None),
+    (7, None),
+    (8, None),
+    (9, None),
+]
 if rows != expected:
     raise SystemExit(f"unexpected article state: {rows}")
 if picked != 1:
@@ -222,4 +257,4 @@ PY_DB_VERIFY
 grep -q 'HERMES_GIT_SYNC_OK' "$TMP/publish.out" || \
     fail 'publish.sh did not report verified Git synchronization'
 
-printf 'PASS: real publish.sh completed front matter, DB update, commit, push, and SHA verification\n'
+printf 'PASS: real publish.sh completed pending preflight, front matter, DB update, commit, push, and SHA verification\n'
