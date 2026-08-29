@@ -36,7 +36,15 @@ resolve_runtime_file() {
 CORE=$(resolve_runtime_file publish_core.sh)
 ADAPTER=$(resolve_runtime_file tools/timezone_shell_adapter.py)
 HERMES_TIME_PY=$(resolve_runtime_file hermes_time.py)
+PENDING_PREFLIGHT=$(resolve_runtime_file digest_pending.py)
 export HERMES_TIME_PY
+
+# Hard gate before publish_core.sh can change Hugo content, public files, DB,
+# Git index or remote main. Every pending draft must have unique selected IDs
+# and no same-category topic_key reuse across dates.
+"$PYTHON" "$PENDING_PREFLIGHT" validate \
+    --root "$BASE" \
+    --db "$BASE/data/hermes.db"
 
 PATCHED=$("$PYTHON" "$ADAPTER" publish "$CORE") || exit $?
 exec bash -c "$PATCHED" "$CORE" "$@"
