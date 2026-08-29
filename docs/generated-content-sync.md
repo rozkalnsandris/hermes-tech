@@ -30,7 +30,8 @@ The production publisher may create one direct commit on `main` only for the cur
 - the production checkout is on `main`;
 - local `HEAD` and freshly fetched `origin/main` are identical before publication;
 - no file is already staged;
-- the only pending working-tree files belong to the same day's digest run;
+- pending working-tree files are limited to the current publication paths plus generated digest-source drafts matching `digests/YYYY-MM-DD[-<category>].md`;
+- pending digest-source drafts span at most 31 distinct dates;
 - the publication commit is a direct child of the verified preflight SHA;
 - its subject is exactly `Publish <category> digest <date>`;
 - every changed path is in the current publication allowlist;
@@ -98,7 +99,7 @@ A generated publication commit exists locally but is not on GitHub.
 
 GitHub advanced while production has no local generated commit.
 
-1. Preserve any untracked same-day digest drafts outside the checkout if necessary.
+1. Preserve any untracked digest drafts outside the checkout if necessary.
 2. Inspect the remote commits.
 3. Update the production checkout only with an explicitly approved fast-forward operation:
 
@@ -133,6 +134,13 @@ Run both network-free isolated repository suites:
 bash tests/test_generated_content_sync.sh
 bash tests/test_publish_generated_content_integration.sh
 ```
+
+CI also runs `tests/test_multi_day_generated_content_sync.sh`, which reproduces a multi-day pending digest backlog and verifies that:
+
+- one publication can proceed while later pending digest-source drafts remain untouched;
+- the publication commit still contains only its exact three-path allowlist;
+- unrelated tracked/untracked content remains rejected;
+- more than 31 pending digest dates fail closed.
 
 `test_generated_content_sync.sh` creates temporary local bare remotes and covers:
 

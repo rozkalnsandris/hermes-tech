@@ -11,6 +11,7 @@ readonly BRANCH="${HERMES_GIT_SYNC_BRANCH:-main}"
 readonly NETWORK_TIMEOUT="${HERMES_GIT_SYNC_TIMEOUT_SECONDS:-20}"
 readonly PUSH_ATTEMPTS="${HERMES_GIT_SYNC_PUSH_ATTEMPTS:-3}"
 readonly PUSH_RETRY_DELAY="${HERMES_GIT_SYNC_PUSH_RETRY_DELAY_SECONDS:-2}"
+readonly MAX_PENDING_DIGEST_DATES=31
 
 usage() {
     cat >&2 <<'USAGE'
@@ -76,12 +77,6 @@ content_path="site/content/$section/$digest_date.md"
 og_path="site/static/og/$digest_date-$category.png"
 readonly digest_path content_path og_path
 readonly -a COMMIT_PATHS=("$digest_path" "$content_path" "$og_path")
-readonly -a PENDING_DIGEST_PATHS=(
-    "digests/$digest_date-devops.md"
-    "digests/$digest_date.md"
-    "digests/$digest_date-ai.md"
-    "digests/$digest_date-agents.md"
-)
 
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || fail \
     "komanda nav palaista Git repozitorijā"
@@ -134,15 +129,12 @@ is_commit_path() {
     return 1
 }
 
-is_pending_path() {
+pending_digest_date_for_path() {
     local candidate=$1
-    local allowed
-    if is_commit_path "$candidate"; then
+    if [[ "$candidate" =~ ^digests/([0-9]{4}-[0-9]{2}-[0-9]{2})(-(devops|ai|agents))?\.md$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[1]}"
         return 0
     fi
-    for allowed in "${PENDING_DIGEST_PATHS[@]}"; do
-        [[ "$candidate" == "$allowed" ]] && return 0
-    done
     return 1
 }
 
@@ -173,19 +165,28 @@ assert_no_staged_changes() {
 }
 
 assert_pending_only() {
-    local kind path
+    local kind path pending_date
+    declare -A pending_dates=()
+
     for kind in unstaged untracked; do
         while IFS= read -r path; do
             [[ -z "$path" ]] && continue
-            is_pending_path "$path" || fail \
-                "neatļauta $kind izmaiņa ārpus šīs dienas publicēšanas ceļiem: $path"
+            if pending_date=$(pending_digest_date_for_path "$path"); then
+                pending_dates["$pending_date"]=1
+                continue
+            fi
+            is_commit_path "$path" || fail \
+                "neatļauta $kind izmaiņa ārpus atļautā digest backlog: $path"
         done < <(collect_paths "$kind")
     done
+
+    (( ${#pending_dates[@]} <= MAX_PENDING_DIGEST_DATES )) || fail \
+        "pending digest backlog aptver pārāk daudz datumus: ${#pending_dates[@]} > $MAX_PENDING_DIGEST_DATES"
 }
 
 assert_index_contract() {
     local staged_count=0
-    local path kind
+    local path
 
     while IFS= read -r path; do
         [[ -z "$path" ]] && continue
@@ -197,13 +198,7 @@ assert_index_contract() {
     (( staged_count > 0 )) || fail \
         "nav staged publikācijas izmaiņu"
 
-    for kind in unstaged untracked; do
-        while IFS= read -r path; do
-            [[ -z "$path" ]] && continue
-            is_pending_path "$path" || fail \
-                "pēc staging palikusi neatļauta $kind izmaiņa: $path"
-        done < <(collect_paths "$kind")
-    done
+    assert_pending_only
 }
 
 relation_error() {
