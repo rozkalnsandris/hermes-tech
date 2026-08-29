@@ -67,6 +67,14 @@ class PublishAdapterIntegrationTests(unittest.TestCase):
             target.write_bytes(source.read_bytes())
             target.chmod(source.stat().st_mode)
 
+        # Pending-draft behavior has dedicated integration coverage. Keep this
+        # fixture focused on timezone rendering instead of constructing a Git
+        # and SQLite publication environment solely to satisfy publish.sh's gate.
+        (self.root / "digest_pending.py").write_text(
+            "raise SystemExit(0)\n",
+            encoding="utf-8",
+        )
+
     def run_script(self, name: str, *args: str) -> subprocess.CompletedProcess[str]:
         env = dict(os.environ)
         env["HERMES_TECH_ROOT"] = str(self.root)
