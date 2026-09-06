@@ -119,3 +119,37 @@ Repository manifest: `.github/start-github-only.json`.
 - Executor unavailability alone must not change `READY` to `BLOCKED`; use `BLOCKED` only for rollout eligibility or contract failure.
 - Repository-local stricter editorial, publication and production-safety rules remain authoritative.
 <!-- END START-GITHUB-ONLY-V1-MANAGED -->
+
+<!-- BEGIN AGENT-WORK-CYCLE-V1-MANAGED -->
+## Agent Work Cycle v1
+
+Shared governance contract: `rozkalnsandris/ops-workflows/docs/AGENT_WORK_CYCLE_V1.md` with machine invariants in `policy/agent-work-cycle-v1.json`. Repository-local rules remain authoritative and may be stricter.
+
+### Canonical state and minimum-sufficient retrieval
+
+- GitHub is canonical for mutable source, branch, SHA, issue/PR, CI/review and authorization-continuity state. Never reuse mutable state from chat history without a fresh read.
+- `START hermes-tech` uses the repository-local startup routing. Bootstrap only enough state to identify one current work item/lane/gate: current `AGENTS.md`/rules, canonical handoff or continuation when present, current default-branch SHA, and only the issue/PR state required by that lane.
+- For a current PR, inspect only the current exact head, required checks, reviews and unresolved threads unless a failure or conflict requires deeper evidence.
+- `SYNC hermes-tech` is incremental refresh of the current lane, not a repo-wide audit. Re-read a handoff only when continuation may have changed or is ambiguous.
+- `turpini` resumes the same scope with incremental retrieval. It never creates MERGE, LIVE, retry, rollback, cleanup, credential, permission or runtime authority.
+- Do not enumerate unrelated work or historical CI/log/comment/review history during normal START/SYNC. Broaden retrieval only demand-driven or under an explicit repository-local audit mode such as `AUDIT-HANDOFF`.
+
+### Work execution and owner gates
+
+- Prefer the smallest coherent fix and carry safe source/docs/tests/policy work through Draft PR, exact-head CI/review convergence and Ready when repository-local rules permit it.
+- Technical intermediate steps such as CI polling, exact-head/diff checks, read-only preflight, evidence refresh and scope-preserving correction are not owner gates.
+- MERGE remains an explicit owner decision unless a repository-local explicitly activated FULL mode already grants issue-scoped merge authority. Merge never implies LIVE/deploy authority.
+- LIVE/deploy/runtime/credential/permission/production-data mutations require the separate exact authorization defined by repository-local rules.
+- Authorization is consumed at the first authorized mutation. After mutation begins, any error, timeout, drift, ambiguity or authorization uncertainty is fail-closed: collect only necessary read-only evidence and STOP. No retry, rollback, cleanup or alternate mutation without fresh explicit authority unless it was pre-authorized.
+
+### Terminal response — exact next command
+
+Every user-visible work-cycle response that ends or pauses repository work must finish with exactly one copy-pasteable command as the final actionable content.
+
+- Use `ACTION REQUIRED` only for a genuine owner authorization/decision gate; never manufacture a gate merely to satisfy this presentation rule.
+- When a real owner gate exists, output the exact authorization command with current issue/PR identifiers and exact SHA/target bindings where applicable.
+- When no owner gate exists and mutable GitHub/external state must be refreshed, output `SYNC hermes-tech`.
+- When no owner gate exists and same-scope safe technical continuation is immediately available, output `turpini`.
+- When the current outcome is complete and no same-scope continuation remains, output `START hermes-tech`.
+- Give exactly one recommended command, not a menu. The response-format contract never grants authority by itself.
+<!-- END AGENT-WORK-CYCLE-V1-MANAGED -->
