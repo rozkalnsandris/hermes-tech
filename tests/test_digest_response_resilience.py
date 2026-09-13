@@ -56,9 +56,59 @@ class DigestResponseResilienceTests(unittest.TestCase):
         self.assertEqual(json.loads(raw)["selected_ids"], [1, 2, 3, 4, 5])
         self.assertEqual(len(calls), 2)
         self.assertIn("source link count=4, expected=5", calls[1])
+        self.assertIn("Each source-link line must be on its own line", calls[1])
+        self.assertIn("Do not prefix the required link with `Source:`", calls[1])
         self.assertTrue(any("semantic mismatch" in line for line in logs))
         self.assertTrue(any("semantic retry izdevās" in line for line in logs))
         sleep.assert_called_once_with(1)
+
+    def test_initial_prompt_requires_parser_accepted_source_lines(self) -> None:
+        articles = [
+            {
+                "id": 1,
+                "title": "Example",
+                "link": "https://example.com/1",
+            }
+        ]
+        serialized = json.dumps(articles, ensure_ascii=False)
+
+        def build_system(cat: str) -> str:
+            return f"system:{cat}"
+
+        def build_prompt(
+            cat: str,
+            today: str,
+            supplied_articles: list[dict],
+            retry_note: str = "",
+        ) -> str:
+            return (
+                f"cat={cat} today={today}\n"
+                f"{json.dumps(supplied_articles, ensure_ascii=False)}\n"
+                f"{retry_note}"
+            )
+
+        core = SimpleNamespace(
+            call_deepseek=lambda *_args: json.dumps(self.valid_digest()),
+            build_digest_system_prompt=build_system,
+            build_digest_user_prompt=build_prompt,
+            _extract_digest_source_candidates=lambda _markdown: [],
+            DIGEST_ITEM_COUNT=5,
+            log=lambda _message: None,
+        )
+        resilience.install_digest_response_resilience(core)
+
+        prompt = core.build_digest_user_prompt("ai", "2026-09-13", articles)
+
+        self.assertIn(resilience.ARTICLE_DATA_BEGIN, prompt)
+        self.assertIn(serialized, prompt)
+        self.assertIn(resilience.ARTICLE_DATA_END, prompt)
+        self.assertIn("Return exactly 5 source-link lines total", prompt)
+        self.assertIn("Each source-link line must be on its own line", prompt)
+        self.assertIn("Do not prefix the required link with `Source:`", prompt)
+        self.assertIn(
+            "Do not put the required source link inline inside a prose sentence",
+            prompt,
+        )
 
     def test_four_selected_ids_retry_then_succeed(self) -> None:
         invalid = self.valid_digest()
