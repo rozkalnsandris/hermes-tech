@@ -34,6 +34,19 @@ ARTICLE_DATA_BEGIN = "BEGIN_UNTRUSTED_ARTICLE_DATA_JSON"
 ARTICLE_DATA_END = "END_UNTRUSTED_ARTICLE_DATA_JSON"
 
 
+def _source_link_format_contract(expected: int) -> str:
+    return (
+        "DIGEST SOURCE LINK FORMAT CONTRACT:\n"
+        f"- Return exactly {expected} source-link lines total, one per selected item.\n"
+        "- Each source-link line must be on its own line and contain only one "
+        "Markdown HTTP(S) link in this exact shape: "
+        "`[<label>](<exact candidate article link>)`.\n"
+        "- Do not prefix the required link with `Source:`, bullets, numbering, or "
+        "prose, and do not append text after the closing `)`.\n"
+        "- Do not put the required source link inline inside a prose sentence."
+    )
+
+
 def _digest_shape_issue(core: Any, payload: dict[str, Any]) -> str | None:
     if "selected_ids" not in payload or "digest" not in payload:
         return None
@@ -86,6 +99,8 @@ def install_digest_response_resilience(core: Any) -> None:
     original: Callable[[str, str, str], str] = core.call_deepseek
     original_system = getattr(core, "build_digest_system_prompt", None)
     original_prompt = getattr(core, "build_digest_user_prompt", None)
+    expected = int(getattr(core, "DIGEST_ITEM_COUNT", 5))
+    source_link_contract = _source_link_format_contract(expected)
 
     if callable(original_system):
         def guarded_system(cat: str) -> str:
@@ -100,10 +115,11 @@ def install_digest_response_resilience(core: Any) -> None:
             articles: list[dict],
             retry_note: str = "",
         ) -> str:
-            return _delimit_article_json(
+            bounded = _delimit_article_json(
                 original_prompt(cat, today, articles, retry_note),
                 articles,
             )
+            return bounded.rstrip() + "\n\n" + source_link_contract
 
         core.build_digest_user_prompt = guarded_prompt
 
@@ -120,14 +136,13 @@ def install_digest_response_resilience(core: Any) -> None:
                 )
                 if delay:
                     time.sleep(delay)
-                expected = int(getattr(core, "DIGEST_ITEM_COUNT", 5))
                 retry_note = (
                     "\n\nDIGEST SEMANTIC RETRY REQUIREMENT: The previous JSON was "
                     f"syntactically valid but violated the digest shape ({last_issue}). "
                     f"Return exactly {expected} selected_ids and exactly {expected} "
-                    "article sections, each with exactly one plain markdown HTTP(S) "
-                    "source link. Keep all IDs restricted to the supplied candidates. "
-                    "Return JSON only."
+                    "article sections. Keep all IDs restricted to the supplied "
+                    "candidates. Return JSON only.\n\n"
+                    + source_link_contract
                 )
 
             raw = original(api_key, system, user + retry_note)
