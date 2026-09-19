@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "enabledManagers": ["github-actions"],
+  "dependencyDashboard": true,
+  "dependencyDashboardApproval": true,
+  "prCreation": "immediate",
+  "automerge": false,
+  "platformAutomerge": false,
+  "configMigration": false,
+  "branchConcurrentLimit": 1,
+  "prConcurrentLimit": 1,
+  "prHourlyLimit": 1,
+  "commitHourlyLimit": 1,
+  "rebaseWhen": "conflicted",
+  "vulnerabilityAlerts": {"enabled": false},
+  "packageRules": [
+    {"description":"Allow non-major GitHub Actions updates to bypass the Dependency Dashboard approval gate","matchManagers":["github-actions"],"matchUpdateTypes":["digest","patch","minor"],"dependencyDashboardApproval":false,"groupName":"GitHub Actions non-major updates","groupSlug":"github-actions-non-major","automerge":false},
+    {"description":"Require Dependency Dashboard approval before major GitHub Actions PRs","matchManagers":["github-actions"],"matchUpdateTypes":["major"],"dependencyDashboardApproval":true,"automerge":false},
+    {"description":"Hold GitHub-hosted runner label updates until actionlint and workflow contracts intentionally adopt them","matchManagers":["github-actions"],"matchDepTypes":["github-runner"],"enabled":false,"automerge":false},
+    {"description":"Hold zizmor action updates until the action, engine, policy, and documentation are reviewed together","matchManagers":["github-actions"],"matchPackageNames":["zizmorcore/zizmor-action"],"enabled":false,"automerge":false},
+    {"description":"Hold zizmor engine input updates until the action, engine, policy, and documentation are reviewed together","matchManagers":["github-actions"],"matchPackageNames":["ghcr.io/zizmorcore/zizmor"],"matchDepTypes":["uses-with"],"enabled":false,"automerge":false}
+  ]
+}
