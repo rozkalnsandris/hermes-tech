@@ -41,8 +41,11 @@ Production deployment is pull-based:
    same-date untracked generated-digest allowlist, records SHA256 values for those
    pending digest sources, rejects tracked/staged/unrelated/path-collision state,
    performs a staged Hugo build, fast-forwards only, verifies the pending bytes
-   again after apply and rollback, verifies the public site, and rolls back both
-   checkout and public files on failure;
+   again after apply, and verifies the public site. Once the first production
+   mutation starts, any apply or post-apply failure preserves the observed
+   production state and deploy workdir evidence and exits without automatic
+   rollback or cleanup; a later repair, rollback, or cleanup requires a new
+   explicit owner authorization;
 8. dependency- and database-sensitive changes remain blocked from automatic
    deployment; database migrations are never executed by this path.
 
@@ -54,7 +57,8 @@ setuid transition: the sudoers-allowlisted invocation of
 `ProtectSystem=full`, and `ProtectControlGroups=true` remain enabled because they
 preserve useful isolation without breaking that narrow privilege boundary. The
 root helper still performs its own exact-SHA, evidence-directory, ancestry,
-checkout-state, publisher-lock, build, health, and rollback validation.
+checkout-state, publisher-lock, build, health, and fail-closed post-mutation
+validation.
 
 The `workflow_dispatch` allowance preserves the recovery property added by issue
 #33: if the original push CI was missed during an Actions interruption, an
