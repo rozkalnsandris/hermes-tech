@@ -36,10 +36,15 @@ PUBLISH_LOCK="$PRIMARY/.publish.lock"
 PUBLIC_URL='https://tech.rozkalns.net/'
 
 WORK=''
+MUTATION_STARTED=false
 finish() {
     local rc=$?
     if [[ -n "$WORK" && -d "$WORK" ]]; then
-        rm -rf -- "$WORK" || true
+        if [[ $rc -ne 0 && "$MUTATION_STARTED" == true ]]; then
+            printf 'EVIDENCE: preserving failed deploy workdir: %s\n' "$WORK" >&2
+        else
+            rm -rf -- "$WORK" || true
+        fi
     fi
     chown -R "$OWNER:$OWNER" "$EVIDENCE_DIR" || true
     trap - EXIT
@@ -245,9 +250,8 @@ done
 
 WORK=$(mktemp -d /tmp/hermes-tech-deploy.XXXXXXXX)
 BUILD_DIR="$WORK/build"
-PUBLIC_BACKUP="$WORK/public-backup"
 OWNER_GROUP=$(id -gn "$OWNER")
-mkdir -p "$BUILD_DIR" "$PUBLIC_BACKUP" "$WORK/hugo-cache"
+mkdir -p "$BUILD_DIR" "$WORK/hugo-cache"
 chown -R "$OWNER:$OWNER_GROUP" "$WORK"
 
 printf 'BUILD: Hugo site for %s\n' "$TARGET_SHA"
@@ -263,10 +267,10 @@ runuser -u "$OWNER" -- env \
 [[ -s "$BUILD_DIR/index.html" ]] || fail 'Hugo build has no index.html'
 find "$BUILD_DIR" -type d -exec chmod 755 {} +
 find "$BUILD_DIR" -type f -exec chmod 644 {} +
-rsync -a "$PRIMARY/site/public/" "$PUBLIC_BACKUP/"
 
 printf 'DEPLOY: fast-forwarding production checkout\n'
 APPLY_RC=0
+MUTATION_STARTED=true
 set +e
 owner_git "$PRIMARY" merge --ff-only "$TARGET_SHA" \
     >"$EVIDENCE_DIR/git-apply.log" 2>&1
@@ -296,39 +300,17 @@ fi
 set -e
 
 if [[ $APPLY_RC -ne 0 ]]; then
-    printf 'DEPLOY FAILED: rolling back to %s\n' "$OLD_SHA"
-    ROLLBACK_RC=0
-    set +e
-    rsync -a --delete "$PUBLIC_BACKUP/" "$PRIMARY/site/public/" \
-        >"$EVIDENCE_DIR/rsync-rollback.log" 2>&1
-    ROLLBACK_RC=$?
-    if [[ $ROLLBACK_RC -eq 0 ]]; then
-        chown -R "$OWNER:$OWNER_GROUP" "$PRIMARY/site/public"
-        owner_git "$PRIMARY" reset --hard "$OLD_SHA" \
-            >"$EVIDENCE_DIR/git-rollback.log" 2>&1
-        ROLLBACK_RC=$?
-    fi
-    if [[ $ROLLBACK_RC -eq 0 ]]; then
-        verify_pending_digest_state
-        ROLLBACK_RC=$?
-    fi
-    if [[ $ROLLBACK_RC -eq 0 ]]; then
-        curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
-            >"$EVIDENCE_DIR/rollback-site.html"
-        ROLLBACK_RC=$?
-    fi
-    set -e
-    if [[ $ROLLBACK_RC -eq 0 ]]; then
-        printf 'DEPLOY_RESULT=FAIL_ROLLBACK_PASS\n'
-        printf 'PENDING_GENERATED_DIGESTS_PRESERVED=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
-        printf 'ROLLBACK_PERFORMED=true\n'
-        printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
-        exit 1
-    fi
-    printf 'DEPLOY_RESULT=FAIL_ROLLBACK_FAIL\n'
-    printf 'ROLLBACK_PERFORMED=true\n'
+    OBSERVED_SHA=$(owner_git "$PRIMARY" rev-parse HEAD 2>/dev/null || true)
+    printf 'DEPLOY FAILED: preserving post-mutation state for explicit operator reconciliation\n' >&2
+    printf 'DEPLOY_RESULT=FAIL_STOP_NO_ROLLBACK\n'
+    printf 'SOURCE_SHA=%s\n' "$TARGET_SHA"
+    printf 'PRODUCTION_SHA=%s\n' "${OBSERVED_SHA:-UNKNOWN}"
+    printf 'PENDING_GENERATED_DIGESTS_BASELINE=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
+    printf 'ROLLBACK_PERFORMED=false\n'
+    printf 'AUTOMATIC_CLEANUP_PERFORMED=false\n'
+    printf 'FAILURE_WORKDIR_PRESERVED=%s\n' "$WORK"
     printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
-    exit 2
+    exit 1
 fi
 
 printf 'DEPLOY_RESULT=PASS\n'
