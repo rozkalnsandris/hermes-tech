@@ -110,7 +110,7 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertIn("production is current again", text)
         self.assertNotIn("requests", text)
 
-    def test_root_helper_serializes_with_publisher_and_rolls_back(self) -> None:
+    def test_root_helper_serializes_with_publisher_and_fails_closed_without_rollback(self) -> None:
         text = read(HELPER)
         subprocess.run(["bash", "-n", str(HELPER)], check=True)
 
@@ -121,8 +121,12 @@ class GitHubMainDeployContractTests(unittest.TestCase):
             "DEPLOY_RESULT=NO_OP_STALE",
             "hugo --source",
             'owner_git "$PRIMARY" merge --ff-only "$TARGET_SHA"',
-            'owner_git "$PRIMARY" reset --hard "$OLD_SHA"',
-            "DEPLOY_RESULT=FAIL_ROLLBACK_PASS",
+            "MUTATION_STARTED=false",
+            "MUTATION_STARTED=true",
+            'if [[ $rc -ne 0 && "$MUTATION_STARTED" == true ]]',
+            "DEPLOY_RESULT=FAIL_STOP_NO_ROLLBACK",
+            "AUTOMATIC_CLEANUP_PERFORMED=false",
+            "FAILURE_WORKDIR_PRESERVED=",
             "DEPLOY_RESULT=PASS",
             "DATABASE_MIGRATIONS_EXECUTED=false",
             "DEPENDENCIES_CHANGED=false",
@@ -131,11 +135,19 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, text)
 
-        self.assertNotIn("git push", text)
-        self.assertNotIn("pip install", text)
-        self.assertNotIn("sqlite_schema.py apply", text)
-        self.assertNotIn("git checkout -B", text)
-        self.assertNotIn("flock -n 9", text)
+        for forbidden in (
+            "git push",
+            "pip install",
+            "sqlite_schema.py apply",
+            "git checkout -B",
+            "flock -n 9",
+            "git reset --hard",
+            "rsync-rollback",
+            "FAIL_ROLLBACK_PASS",
+            "FAIL_ROLLBACK_FAIL",
+            "ROLLBACK_PERFORMED=true",
+        ):
+            self.assertNotIn(forbidden, text)
 
     def test_root_helper_preserves_only_pending_generated_digests(self) -> None:
         text = read(HELPER)
