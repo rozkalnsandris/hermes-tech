@@ -63,9 +63,13 @@ install -d -m 0700 "$STATE_ROOT"
 printf '%s\n' "$HEAD_SHA" >"$CONTROL_APPROVAL"
 chmod 0600 "$CONTROL_APPROVAL"
 
-# Canary first. The recurring timer is enabled only after the exact merged SHA
-# has deployed successfully and the public site has passed its health check.
-sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1
+# Canary first. Reset a failed unit when recovery needs it, but do not make an
+# already healthy inactive unit depend on reset-failed succeeding. The recurring
+# timer is enabled only after the exact merged SHA has deployed successfully and
+# the public site has passed its health check.
+if systemctl is-failed --quiet hermes-tech-pull-deploy.service; then
+    sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1
+fi
 sudo systemctl start hermes-tech-pull-deploy.service
 
 [[ "$(systemctl show hermes-tech-pull-deploy.service -p Result --value)" == 'success' ]] \
