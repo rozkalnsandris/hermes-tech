@@ -38,6 +38,13 @@ class ControlPlaneActivationFailClosedTests(unittest.TestCase):
             "systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1 || true",
             text,
         )
+        self.assertIn(
+            "if systemctl is-failed --quiet hermes-tech-pull-deploy.service; then\n"
+            "    sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1\n"
+            "fi\n"
+            "sudo systemctl start hermes-tech-pull-deploy.service",
+            text,
+        )
 
     def test_installer_preserves_failure_workdir_after_mutation(self) -> None:
         text = read(INSTALLER)
