@@ -8,13 +8,32 @@ fail() {
     exit 1
 }
 
-[[ ${EUID:-$(id -u)} -ne 0 ]] || fail 'run activation as the andris user, not root'
-
 SOURCE_WORKTREE='/home/andris/hermes-tech-worktrees/release-control'
 PRIMARY='/home/andris/hermes-tech'
 STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
 CONTROL_APPROVAL="$STATE_ROOT/approved-control-plane-sha"
 NOREPLY_EMAIL='277435981+rozkalnsandris@users.noreply.github.com'
+MUTATION_STARTED=false
+HEAD_SHA=''
+
+finish() {
+    local rc=$?
+    trap - EXIT
+    if [[ $rc -ne 0 && "$MUTATION_STARTED" == true ]]; then
+        local observed_production='UNKNOWN'
+        observed_production=$(git -C "$PRIMARY" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')
+        printf 'PULL_DEPLOY_ACTIVATION_RESULT=FAIL_STOP_NO_ROLLBACK\n' >&2
+        printf 'SOURCE_SHA=%s\n' "${HEAD_SHA:-UNKNOWN}" >&2
+        printf 'PRODUCTION_SHA=%s\n' "$observed_production" >&2
+        printf 'ROLLBACK_PERFORMED=false\n' >&2
+        printf 'AUTOMATIC_CLEANUP_PERFORMED=false\n' >&2
+        printf 'DATABASE_MIGRATIONS_EXECUTED=false\n' >&2
+    fi
+    exit "$rc"
+}
+trap finish EXIT
+
+[[ ${EUID:-$(id -u)} -ne 0 ]] || fail 'run activation as the andris user, not root'
 
 for command_name in chmod curl git install sudo systemctl; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
@@ -28,8 +47,10 @@ REMOTE_SHA=$(git rev-parse refs/remotes/origin/main)
 [[ -z "$(git branch --show-current)" ]] || fail 'release-control must remain detached'
 [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || fail 'release-control worktree is not clean'
 
-# Never let an old or newly installed timer race the activation canary.
-sudo systemctl disable --now hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
+# The first host/control-plane mutation starts here. From this point onward any
+# error must preserve the observed state and stop without rollback or cleanup.
+MUTATION_STARTED=true
+sudo systemctl disable --now hermes-tech-pull-deploy.timer >/dev/null 2>&1
 sudo bash ./tools/pull-deploy/install-pull-deploy.sh
 
 # Preserve historical commit SHAs, but keep future local publisher/operator commits private.
@@ -44,7 +65,7 @@ chmod 0600 "$CONTROL_APPROVAL"
 
 # Canary first. The recurring timer is enabled only after the exact merged SHA
 # has deployed successfully and the public site has passed its health check.
-sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1 || true
+sudo systemctl reset-failed hermes-tech-pull-deploy.service >/dev/null 2>&1
 sudo systemctl start hermes-tech-pull-deploy.service
 
 [[ "$(systemctl show hermes-tech-pull-deploy.service -p Result --value)" == 'success' ]] \

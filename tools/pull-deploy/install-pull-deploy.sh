@@ -35,6 +35,27 @@ SUDOERS='/etc/sudoers.d/hermes-tech-pull-deploy'
 STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
 EVIDENCE_ROOT="$STATE_ROOT/evidence"
 INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"
+MUTATION_STARTED=false
+TMPDIR_INSTALL=''
+HEAD_SHA=''
+
+finish() {
+    local rc=$?
+    trap - EXIT
+    if [[ $rc -ne 0 && "$MUTATION_STARTED" == true ]]; then
+        printf 'PULL_DEPLOY_INSTALL_RESULT=FAIL_STOP_NO_ROLLBACK\n' >&2
+        printf 'SOURCE_SHA=%s\n' "${HEAD_SHA:-UNKNOWN}" >&2
+        printf 'ROLLBACK_PERFORMED=false\n' >&2
+        printf 'AUTOMATIC_CLEANUP_PERFORMED=false\n' >&2
+        printf 'FAILURE_WORKDIR_PRESERVED=%s\n' "${TMPDIR_INSTALL:-NONE}" >&2
+        printf 'PRODUCTION_CHANGED=false\n' >&2
+        printf 'DATABASE_MIGRATIONS_AUTHORIZED=false\n' >&2
+    elif [[ -n "$TMPDIR_INSTALL" ]]; then
+        rm -rf -- "$TMPDIR_INSTALL"
+    fi
+    exit "$rc"
+}
+trap finish EXIT
 
 for command_name in bash chmod chown gh git id install mktemp python3 rm runuser sha256sum sudo systemctl visudo; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
@@ -78,14 +99,13 @@ runuser -u "$OWNER" -- env HOME="$OWNER_HOME" GH_CONFIG_DIR="$OWNER_HOME/.config
     gh auth status --hostname github.com >/dev/null 2>&1 \
     || fail 'andris GitHub CLI authentication is unavailable'
 
+# The first installer mutation starts here. Preserve the install workdir on any
+# later failure so an operator can inspect exactly what was staged/applied.
+MUTATION_STARTED=true
+TMPDIR_INSTALL=$(mktemp -d /tmp/hermes-tech-pull-deploy-install.XXXXXXXX)
+
 install -d -o "$OWNER" -g "$OWNER" -m 0700 "$STATE_ROOT" "$EVIDENCE_ROOT"
 install -d -o root -g root -m 0755 "$DEST_LIBEXEC"
-
-TMPDIR_INSTALL=$(mktemp -d /tmp/hermes-tech-pull-deploy-install.XXXXXXXX)
-cleanup() {
-    rm -rf -- "$TMPDIR_INSTALL"
-}
-trap cleanup EXIT
 
 cat >"$TMPDIR_INSTALL/sudoers" <<'SUDOERS'
 Defaults!/usr/local/sbin/hermes-tech-deploy-main env_reset,secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
