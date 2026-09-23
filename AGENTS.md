@@ -26,6 +26,16 @@ For substantial changes:
 
 When asked only to inspect, do not modify anything.
 
+## RPi5 visual verification
+
+For pixel-level inspection of the RPi5-hosted Hermes Tech web UI, use the canonical host-side policy in `rozkalnsandris/RPi5_main@main:docs/VISUAL_VERIFICATION.md`.
+
+- Default host tool: `~/.local/bin/ui-proof`.
+- Engine: Playwright with system Chromium; raw `chromium --screenshot` is not the standard path.
+- Standard captures: desktop `1440x900` and Galaxy A55 / `SM-A556B` browser viewport `412x892`, plus DOM, console, page-error and manifest evidence.
+- Use RDC only to open the generated PNG evidence and inspect rendered pixels.
+- Running the host tool writes evidence on the RPi5, so current applicable LIVE/runtime authority is still required. This rule does not grant publish, deploy, restart, retry, cleanup or rollback authority.
+
 ## Editorial architecture
 
 The Hermes Agent global identity lives in:
