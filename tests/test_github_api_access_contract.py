@@ -63,7 +63,6 @@ class GitHubApiAccessContractTests(unittest.TestCase):
 
     def test_fast_startup_contract_binds_manifest_without_widening_authority(self):
         self.assertIn("`.github/github-api-access-v1.json`", self.fast_contract)
-        self.assertIn(SHARED_REVISION[:12], SHARED_REVISION)
         self.assertIn("never tight-poll CI or reviews", self.fast_contract)
         self.assertIn("Never issue an automatic duplicate mutation", self.fast_contract)
         self.assertIn("does not create publish, deploy, runtime", self.fast_contract)
