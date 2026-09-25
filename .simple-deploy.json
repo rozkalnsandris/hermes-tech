@@ -1,0 +1,40 @@
+{
+  "schema": "rozkalns.simple-deploy.consumer.v1",
+  "repository": "rozkalnsandris/hermes-tech",
+  "image": "ghcr.io/rozkalnsandris/hermes-tech",
+  "build": {
+    "context": ".",
+    "dockerfile": "Dockerfile",
+    "architecture": "linux/arm64"
+  },
+  "target": {
+    "alias": "hermes-tech-public-rpi5",
+    "runtime_class": "rpi5-compose"
+  },
+  "compose": {
+    "project": "hermes-tech-public",
+    "file": "deploy/docker-compose.simple.yml",
+    "service": "hermes-tech"
+  },
+  "health": {
+    "liveness_path": "/health",
+    "readiness": {
+      "state": "required",
+      "path": "/ready"
+    }
+  },
+  "persistence": {
+    "volumes": []
+  },
+  "registry": {
+    "pull_profile": "public-anonymous-pull"
+  },
+  "forbidden_operations": [
+    "database-schema-data-mutation",
+    "destructive-recovery",
+    "secrets-credentials-permissions",
+    "cloudflare-dns-network",
+    "private-provider-activation",
+    "unrelated-host-control"
+  ]
+}
