@@ -1,0 +1,15 @@
+name: SIMPLE-DEPLOY Hermes Tech
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    uses: rozkalnsandris/ops-workflows/.github/workflows/simple-deploy.yml@e05ed760791a127c7c9628696806ef39c9fe329c # v1.0.0
+    with:
+      source_sha: ${{ github.sha }}
