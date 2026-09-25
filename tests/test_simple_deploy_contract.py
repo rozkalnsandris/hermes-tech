@@ -55,6 +55,10 @@ class SimpleDeployContractTest(unittest.TestCase):
     def test_docker_build_only_consumes_public_site_source(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("COPY site ./site", dockerfile)
+        self.assertIn("--destination /tmp/out", dockerfile)
+        self.assertIn("COPY --from=build /tmp/out /usr/share/nginx/html", dockerfile)
+        self.assertNotIn("--destination /out", dockerfile)
+        self.assertNotIn("COPY --from=build /out /usr/share/nginx/html", dockerfile)
         for forbidden in (
             "COPY . .",
             ".env",

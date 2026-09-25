@@ -2,7 +2,7 @@ FROM ghcr.io/gohugoio/hugo:v0.164.0 AS build
 WORKDIR /src
 COPY site ./site
 RUN hugo --source /src/site \
-    --destination /out \
+    --destination /tmp/out \
     --cleanDestinationDir \
     --minify \
     --noBuildLock \
@@ -10,5 +10,5 @@ RUN hugo --source /src/site \
 
 FROM nginxinc/nginx-unprivileged:1.29.1-alpine
 COPY deploy/nginx.conf /etc/nginx/nginx.conf
-COPY --from=build /out /usr/share/nginx/html
+COPY --from=build /tmp/out /usr/share/nginx/html
 EXPOSE 8080
