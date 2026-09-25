@@ -1,0 +1,75 @@
+{
+  "schema": "rozkalns.github-api-access-consumer.v1",
+  "status": "ROLLOUT_SOURCE_ONLY",
+  "repository": "rozkalnsandris/hermes-tech",
+  "canonical_repository": "rozkalnsandris/ops-workflows",
+  "tracking": {
+    "rollout_issue": 112,
+    "umbrella_issue": 108
+  },
+  "shared_contract": {
+    "revision": "3bb0740b5f0a8ce631d2ff79f1acc4999ff6ed2c",
+    "document": "docs/GITHUB_API_ACCESS_V1.md",
+    "policy": "policy/github-api-access-v1.json"
+  },
+  "read_plan": {
+    "serial_by_default_per_repository_lane": true,
+    "minimum_sufficient_retrieval_required": true,
+    "changed_files_on_demand_only": true,
+    "event_or_state_driven_continuation_preferred": true,
+    "tight_polling_allowed": false,
+    "historical_workflow_runs_by_default": false,
+    "reuse_same_step_evidence_when_sufficient": true
+  },
+  "rate_limit_dispositions": [
+    "PRIMARY_RATE_LIMIT_EXHAUSTED",
+    "SECONDARY_RATE_LIMIT_SUSPECTED",
+    "RETRY_AFTER_REQUIRED",
+    "RESET_WAIT_REQUIRED",
+    "READ_BACKOFF_REQUIRED",
+    "TRANSPORT_RATE_LIMIT_METADATA_UNAVAILABLE"
+  ],
+  "mutation_boundary": {
+    "final_pre_mutation_budget_class": "FINAL_PREMERGE_COMPACT",
+    "expected_head_binding_required_when_supported": true,
+    "authorization_consumed_when_mutation_dispatched": true,
+    "automatic_duplicate_mutation_after_403": false,
+    "automatic_duplicate_mutation_after_429": false,
+    "automatic_duplicate_mutation_after_timeout": false,
+    "automatic_duplicate_mutation_after_transport_error": false,
+    "post_dispatch_uncertainty_fail_closed": true,
+    "minimal_read_only_reconciliation_only": true,
+    "stop_after_ambiguous_outcome": true,
+    "confirmed_success_budget_class": "EXACT_MAIN_MINIMAL",
+    "merge_success_implies_live_or_deploy_authority": false
+  },
+  "synthetic_acceptance": {
+    "intentionally_exhaust_real_quota": false,
+    "post_dispatch_429": {
+      "disposition": "MUTATION_OUTCOME_UNKNOWN_RATE_LIMIT",
+      "automatic_duplicate_mutation_allowed": false,
+      "requires_reconciliation": true,
+      "stop": true
+    },
+    "post_dispatch_timeout": {
+      "disposition": "MUTATION_OUTCOME_UNKNOWN_TIMEOUT",
+      "automatic_duplicate_mutation_allowed": false,
+      "requires_reconciliation": true,
+      "stop": true
+    },
+    "post_dispatch_transport_error": {
+      "disposition": "MUTATION_OUTCOME_UNKNOWN_TRANSPORT",
+      "automatic_duplicate_mutation_allowed": false,
+      "requires_reconciliation": true,
+      "stop": true
+    }
+  },
+  "local_stricter_rules": {
+    "fast_merge_requires_explicit_owner_decision": true,
+    "live_publish_deploy_runtime_requires_exact_authority": true,
+    "secrets_host_root_cloudflare_mutations_require_exact_authority": true,
+    "editorial_and_production_safety_rules_unchanged": true,
+    "github_only_live_all_boundaries_unchanged": true,
+    "simple_deploy_activation_unchanged": true
+  }
+}
