@@ -48,6 +48,7 @@ class SimpleDeployContractTest(unittest.TestCase):
             workflow,
         )
         self.assertIn("source_sha: ${{ github.sha }}", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
         self.assertNotIn("run:", workflow)
         self.assertNotIn("secrets:", workflow)
 
