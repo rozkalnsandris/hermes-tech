@@ -10,6 +10,19 @@ This is the active local FAST-LANE startup contract. The older versioned filenam
 
 `START`, `turpini`, or equivalent continuation may carry safe source work from fresh canonical GitHub state through Ready. Documentation, editorial/source changes, tests, static-site/source work and deterministic refactors may proceed in one batch, including branch, PR, CI/review and up to two scope-preserving corrections. Batch 2-5 closely related same-risk items when coherent. Merge remains explicit.
 
+## GitHub API access binding
+
+For `START`, `SYNC`, `turpini`, PR continuation and merge preflight, load `.github/github-api-access-v1.json` and follow its pinned shared contract revision.
+
+- Keep repository-lane GitHub reads serial and minimum-sufficient by default.
+- Inspect changed files only when the current decision requires them; do not broad-scan historical CI/review state by default.
+- Prefer event/state-driven continuation over polling and never tight-poll CI or reviews.
+- Immediately before an authorized mutation, use a compact exact-head preflight and bind the expected head when the transport supports it.
+- If a dispatched mutation returns an ambiguous `429`, timeout or transport failure, perform only the minimum read-only reconciliation required to classify the outcome, then STOP. Never issue an automatic duplicate mutation.
+- A confirmed merge does not create publish, deploy, runtime, credential, permission, host/root, Cloudflare or other LIVE authority.
+
+This API-access binding changes request discipline only. All stricter Hermes Tech merge, editorial, publication and production-safety rules below remain authoritative.
+
 ## Human gate budget and Composite STRICT
 
 Normal delivery has at most two owner gates: **MERGE**, then **COMPOSITE LIVE** only when publication/deploy/runtime mutation is required. Before the live gate, automation gathers all read-only evidence. One bounded live authorization binds exact SHA, target, allowed mutation categories, limits and exclusions; preflight and technical verification run inside one fail-closed one-shot.
