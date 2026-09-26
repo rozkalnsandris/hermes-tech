@@ -1,0 +1,26 @@
+{
+  "schema": "rozkalns.agent-bootstrap.v1",
+  "repository": "rozkalnsandris/hermes-tech",
+  "shared_policy": {
+    "work_cycle": "docs/WORK_CYCLE_V23_ADOPTION.md",
+    "github_api_access": ".github/github-api-access-v1.json"
+  },
+  "rules": {
+    "primary": "AGENTS.md",
+    "local_strict_rules": [
+      "AGENTS.md#safe-change-workflow",
+      "AGENTS.md#fast-lane-v22-composite",
+      "AGENTS.md#github-only-live-all-v1",
+      "AGENTS.md#agent-work-cycle-v1"
+    ]
+  },
+  "continuation": {
+    "kind": "none"
+  },
+  "automation": {
+    "fast_lane": true,
+    "auto_run_full": false,
+    "queue_mode": "not-applicable"
+  },
+  "deployment_profile": "simple-deploy"
+}
