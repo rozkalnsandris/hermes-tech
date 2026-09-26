@@ -1,0 +1,72 @@
+name: Work-cycle v2.3 conformance
+
+on:
+  pull_request:
+    paths:
+      - '.github/agent-bootstrap.json'
+      - '.github/work-cycle-v23.json'
+      - '.github/workflows/work-cycle-v23-conformance.yml'
+      - '.github/workflows/simple-deploy.yml'
+      - 'docs/WORK_CYCLE_V23_ADOPTION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout canonical work-cycle contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: rozkalnsandris/ops-workflows
+          ref: 274d58f2d9d3cb86feded2751b8f9009a4501f6b
+          path: .canonical-ops-workflows
+          persist-credentials: false
+
+      - name: Validate bootstrap manifest
+        run: python3 .canonical-ops-workflows/scripts/agent_bootstrap_manifest.py .github/agent-bootstrap.json --repo-root .
+
+      - name: Validate Hermes Tech adoption invariants
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('.github/agent-bootstrap.json').read_text())
+          adoption = json.loads(Path('.github/work-cycle-v23.json').read_text())
+          deploy = Path('.github/workflows/simple-deploy.yml').read_text()
+
+          assert manifest['repository'] == 'rozkalnsandris/hermes-tech'
+          assert manifest['deployment_profile'] == 'simple-deploy'
+          assert manifest['automation'] == {
+              'fast_lane': True,
+              'auto_run_full': False,
+              'queue_mode': 'not-applicable',
+          }
+          assert manifest['continuation'] == {'kind': 'none'}
+
+          assert adoption['canonical_revision'] == '274d58f2d9d3cb86feded2751b8f9009a4501f6b'
+          assert adoption['tracking_issue'] == 124
+          assert adoption['start_contract']['safe_auto_continuation'] is True
+          assert adoption['start_contract']['compact_terminal_response'] is True
+          assert adoption['write_preflight']['status'] == 'ADOPTED'
+          assert adoption['write_preflight']['duplicate_framework_created'] is False
+          assert adoption['auto_run_full_normalized_state']['status'] == 'NOT_APPLICABLE'
+          assert adoption['auto_run_full_normalized_state']['controller_created'] is False
+          assert adoption['deployment']['simple_deploy_already_active'] is True
+          assert adoption['deployment']['governance_only_push_ignored'] is True
+          assert adoption['deployment']['production_deploy_authority_created'] is False
+          assert adoption['authority']['merge_authority_widened'] is False
+          assert adoption['authority']['live_authority_widened'] is False
+          assert adoption['authority']['queue_vnext_activated'] is False
+
+          for ignored in ("'.github/**'", "'docs/**'", "'tests/**'"):
+              assert ignored in deploy, f'missing SIMPLE-DEPLOY governance ignore: {ignored}'
+          PY

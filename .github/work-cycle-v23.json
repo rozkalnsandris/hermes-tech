@@ -1,0 +1,55 @@
+{
+  "schema": "rozkalns.work-cycle-v23.consumer.v1",
+  "repository": "rozkalnsandris/hermes-tech",
+  "canonical_repository": "rozkalnsandris/ops-workflows",
+  "canonical_revision": "274d58f2d9d3cb86feded2751b8f9009a4501f6b",
+  "tracking_issue": 124,
+  "bootstrap_manifest": {
+    "status": "ADOPTED",
+    "path": ".github/agent-bootstrap.json",
+    "profile": "simple-deploy",
+    "mutable_operational_truth_allowed": false
+  },
+  "start_contract": {
+    "safe_auto_continuation": true,
+    "compact_terminal_response": true,
+    "single_selected_current_lane_per_start": true,
+    "unnecessary_technical_stop_allowed": false,
+    "local_owner_gates_preserved": true
+  },
+  "write_preflight": {
+    "status": "ADOPTED",
+    "contract": "WRITE_PREFLIGHT_COMPACT_V1",
+    "existing_github_api_adapter": ".github/github-api-access-v1.json",
+    "exact_existing_intent": "RECONCILE_OR_NOOP",
+    "conflicting_identity": "STOP",
+    "stale_writer": "STOP",
+    "duplicate_framework_created": false
+  },
+  "auto_run_full_normalized_state": {
+    "status": "NOT_APPLICABLE",
+    "reason": "hermes-tech has no repository-local AUTO-RUN FULL contract or controller; this rollout must not invent one merely for fleet uniformity.",
+    "controller_created": false,
+    "historical_state_rewritten": false
+  },
+  "deployment": {
+    "profile": "simple-deploy",
+    "simple_deploy_already_active": true,
+    "governance_only_push_ignored": true,
+    "production_deploy_authority_created": false
+  },
+  "local_stricter_rules": {
+    "fast_merge_requires_explicit_owner_decision": true,
+    "live_publish_deploy_runtime_requires_exact_authority": true,
+    "editorial_and_production_safety_rules_unchanged": true,
+    "secrets_host_root_cloudflare_mutations_require_exact_authority": true,
+    "merge_implies_live_or_deploy": false
+  },
+  "authority": {
+    "source_authority_widened": false,
+    "merge_authority_widened": false,
+    "live_authority_widened": false,
+    "retry_rollback_cleanup_authority_created": false,
+    "queue_vnext_activated": false
+  }
+}
