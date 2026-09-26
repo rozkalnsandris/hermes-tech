@@ -18,14 +18,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout consumer
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Checkout canonical work-cycle contract
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: rozkalnsandris/ops-workflows
           ref: 274d58f2d9d3cb86feded2751b8f9009a4501f6b
           path: .canonical-ops-workflows
+          persist-credentials: false
 
       - name: Validate bootstrap manifest
         run: python3 .canonical-ops-workflows/scripts/agent_bootstrap_manifest.py .github/agent-bootstrap.json --repo-root .
