@@ -154,7 +154,7 @@ Shared governance contract: `rozkalnsandris/ops-workflows/docs/AGENT_WORK_CYCLE_
 
 ### Terminal response — exact next command
 
-Every user-visible work-cycle response that ends or pauses repository work must finish with exactly one copy-pasteable command as the final actionable content.
+Every user-visible work-cycle response that ends or pauses repository work must finish with exactly one copy-pasteable command as the final actionable content. That final operator command — including `ACTION REQUIRED` authorization, `NEXT COMMAND`, `MERGE`, `AUTHORIZE`, `START`, `SYNC`, `turpini`, or any equivalent exact owner command — must be the sole content of its own fenced `text` code block. Never emit the final command as prose, inline code, a list item, a quote, or unfenced/plain text.
 
 - Use `ACTION REQUIRED` only for a genuine owner authorization/decision gate; never manufacture a gate merely to satisfy this presentation rule.
 - When a real owner gate exists, output the exact authorization command with current issue/PR identifiers and exact SHA/target bindings where applicable.
