@@ -156,6 +156,8 @@ Shared governance contract: `rozkalnsandris/ops-workflows/docs/AGENT_WORK_CYCLE_
 
 Every user-visible work-cycle response that ends or pauses repository work must finish with exactly one copy-pasteable command as the final actionable content. That final operator command — including `ACTION REQUIRED` authorization, `NEXT COMMAND`, `MERGE`, `AUTHORIZE`, `START`, `SYNC`, `turpini`, or any equivalent exact owner command — must be the sole content of its own fenced `text` code block. Never emit the final command as prose, inline code, a list item, a quote, or unfenced/plain text.
 
+Keep owner commands compact: do not repeat standing safety exclusions, routine fresh-state checks, or fail-closed clauses already imposed by this repository/shared policy. Include only the operation, scope/target, and exact binding or exception needed for the decision. Preserve a full immutable SHA and any required target/risk/recovery binding when exact identity or authority requires it; use a longer form only when additional authority must be explicit.
+
 - Use `ACTION REQUIRED` only for a genuine owner authorization/decision gate; never manufacture a gate merely to satisfy this presentation rule.
 - When a real owner gate exists, output the exact authorization command with current issue/PR identifiers and exact SHA/target bindings where applicable.
 - When no owner gate exists and mutable GitHub/external state must be refreshed, output `SYNC hermes-tech`.
