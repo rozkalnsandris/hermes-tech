@@ -21,15 +21,19 @@ class DeployImpactPathTests(unittest.TestCase):
         self.assertEqual(impact.classification, MODULE.NO_DEPLOY)
         self.assertFalse(impact.deploy_required)
 
-    def test_docs_and_tests_are_no_deploy(self) -> None:
+    def test_docs_tests_and_github_automation_are_no_host_deploy(self) -> None:
         impact = MODULE.classify_paths([
             "README.md",
             "docs/runbook.md",
             "tests/test_example.py",
             ".github/ISSUE_TEMPLATE/bug.md",
+            ".github/workflows/ci.yml",
+            ".github/workflows/simple-deploy.yml",
+            ".github/workflows/work-cycle-v23-conformance.yml",
         ])
         self.assertEqual(impact.classification, MODULE.NO_DEPLOY)
         self.assertFalse(impact.deploy_required)
+        self.assertFalse(impact.control_plane_changed)
         self.assertEqual(impact.auto_deploy_paths, ())
 
     def test_site_or_runtime_code_defaults_to_auto_deploy_safe(self) -> None:
@@ -55,10 +59,10 @@ class DeployImpactPathTests(unittest.TestCase):
         self.assertFalse(impact.control_plane_changed)
         self.assertFalse(impact.db_sensitive_changed)
 
-    def test_control_plane_requires_exact_sha_approval(self) -> None:
+    def test_installed_control_plane_requires_exact_sha_approval(self) -> None:
         impact = MODULE.classify_paths([
-            ".github/workflows/ci.yml",
             "tools/pull-deploy/release/hermes-tech-pull-deploy",
+            "tools/classify_deploy_impact.py",
         ])
         self.assertEqual(
             impact.classification,
@@ -66,7 +70,7 @@ class DeployImpactPathTests(unittest.TestCase):
         )
         self.assertTrue(impact.control_plane_changed)
 
-    def test_runtime_is_stronger_than_control_plane(self) -> None:
+    def test_runtime_is_stronger_than_github_automation(self) -> None:
         impact = MODULE.classify_paths([
             ".github/workflows/ci.yml",
             ".python-version",
@@ -76,7 +80,7 @@ class DeployImpactPathTests(unittest.TestCase):
         ])
         self.assertEqual(impact.classification, MODULE.RUNTIME_ROLLOUT_REQUIRED)
         self.assertTrue(impact.runtime_changed)
-        self.assertTrue(impact.control_plane_changed)
+        self.assertFalse(impact.control_plane_changed)
         self.assertFalse(impact.db_sensitive_changed)
 
     def test_every_root_requirements_manifest_is_runtime_sensitive(self) -> None:
@@ -118,7 +122,7 @@ class DeployImpactPathTests(unittest.TestCase):
             "requirements-bootstrap.txt",
             "requirements.txt",
         ))
-        self.assertEqual(impact.control_plane_paths, (".github/workflows/ci.yml",))
+        self.assertEqual(impact.control_plane_paths, ())
 
     def test_unknown_path_fails_toward_auto_deploy_not_no_deploy(self) -> None:
         impact = MODULE.classify_paths(["future_runtime_contract.toml"])

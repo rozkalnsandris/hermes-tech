@@ -67,6 +67,9 @@ jobs:
           assert adoption['authority']['live_authority_widened'] is False
           assert adoption['authority']['queue_vnext_activated'] is False
 
-          for ignored in ("'.github/**'", "'docs/**'", "'tests/**'"):
-              assert ignored in deploy, f'missing SIMPLE-DEPLOY governance ignore: {ignored}'
+          assert 'paths-ignore:' not in deploy
+          for included in ("'site/**'", "'Dockerfile'", "'deploy/**'", "'.simple-deploy.json'"):
+              assert included in deploy, f'missing SIMPLE-DEPLOY static-origin path: {included}'
+          for governance in ("'AGENTS.md'", "'.github/**'", "'docs/**'", "'tests/**'"):
+              assert governance not in deploy, f'unexpected SIMPLE-DEPLOY governance path: {governance}'
           PY
