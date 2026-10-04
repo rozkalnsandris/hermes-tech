@@ -3,10 +3,11 @@ name: SIMPLE-DEPLOY Hermes Tech
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '.github/**'
-      - 'docs/**'
-      - 'tests/**'
+    paths:
+      - 'site/**'
+      - 'Dockerfile'
+      - 'deploy/**'
+      - '.simple-deploy.json'
   workflow_dispatch:
 
 permissions:

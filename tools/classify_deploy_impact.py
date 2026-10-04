@@ -73,9 +73,8 @@ def _normalize_path(raw: str) -> str:
 
 def _is_control_plane(path: str) -> bool:
     return (
-        path.startswith(".github/workflows/")
-        or path.startswith("tools/pull-deploy/")
-        or path in {"tools/ci.sh", "tools/classify_deploy_impact.py"}
+        path.startswith("tools/pull-deploy/")
+        or path == "tools/classify_deploy_impact.py"
         or path
         in {
             "ops/systemd/hermes-tech-pull-deploy.service",
@@ -105,7 +104,7 @@ def _is_db_sensitive(path: str) -> bool:
 def _is_no_deploy(path: str) -> bool:
     if path.startswith("docs/") or path.startswith("tests/"):
         return True
-    if path.startswith(".github/") and not path.startswith(".github/workflows/"):
+    if path.startswith(".github/"):
         return True
     return path in {
         ".editorconfig",

@@ -77,20 +77,22 @@ class GitHubMainDeployContractTests(unittest.TestCase):
         self.assertNotIn("git reset --hard", text)
         self.assertNotIn("production checkout is not clean", text)
 
-    def test_control_plane_changes_use_canonical_classifier_and_exact_sha_activation(self) -> None:
+    def test_installed_control_plane_uses_canonical_classifier_and_exact_sha_activation(self) -> None:
         poller = read(POLLER)
         classifier = read(CLASSIFIER)
         activator = read(ACTIVATOR)
         doc = read(DOC)
 
         for marker in (
-            'path.startswith(".github/workflows/")',
             'path.startswith("tools/pull-deploy/")',
-            '"tools/ci.sh", "tools/classify_deploy_impact.py"',
+            'path == "tools/classify_deploy_impact.py"',
             "hermes-tech-pull-deploy.service",
             "hermes-tech-pull-deploy.timer",
         ):
             self.assertIn(marker, classifier)
+
+        self.assertNotIn('path.startswith(".github/workflows/")', classifier)
+        self.assertNotIn('"tools/ci.sh"', classifier)
 
         self.assertIn("installed-control-plane-sha", poller)
         self.assertIn("approved-control-plane-sha", poller)
