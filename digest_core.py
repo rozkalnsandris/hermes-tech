@@ -1079,6 +1079,14 @@ def _source_label_matches(label: str, title: str) -> bool:
     )
 
 
+def _source_label_matches_canonical_url(label: str, link: str) -> bool:
+    """Use the model's URL label only if it is an exact allowlisted URL."""
+    return (
+        link.startswith(("http://", "https://"))
+        and label.strip().rstrip("/") == link.rstrip("/")
+    )
+
+
 def _extract_digest_source_candidates(markdown: str) -> list[dict[str, str]]:
     markdown_link_re = re.compile(
         r"^\s*\[([^\]]+)\]\((https?://.+)\)\s*$",
@@ -1154,12 +1162,34 @@ def _resolve_digest_selected_ids(
             for article_id in unused_ids
             if str(allowed[article_id]["link"]).rstrip("/") == observed_url
         ]
+        label_exact = [
+            article_id
+            for article_id in unused_ids
+            if _source_label_matches_canonical_url(
+                source["label"], str(allowed[article_id]["link"])
+            )
+        ]
+        if len(label_exact) > 1:
+            raise RuntimeError(
+                f"[{category}] Source URL etiķete nav unikāla kandidātu kopā; "
+                "fail-closed"
+            )
+        if exact and label_exact and exact != label_exact:
+            raise RuntimeError(
+                f"[{category}] Source URL un etiķete ir pretrunīga; fail-closed"
+            )
         if len(exact) == 1:
             article_id = exact[0]
         elif len(exact) > 1:
             raise RuntimeError(
                 f"[{category}] Source URL nav unikāls kandidātu kopā: "
                 f"{source['url']}; fail-closed"
+            )
+        elif len(label_exact) == 1:
+            article_id = label_exact[0]
+            log(
+                f"[{category}] Source URL labots no precīzas kandidāta "
+                f"URL etiķetes: article_id={article_id}"
             )
         else:
             credible = [
@@ -1344,12 +1374,25 @@ def _restore_digest_source_links(path: Path) -> None:
             if by_id[article_id][1].rstrip("/") == observed_url
         ]
 
+        label_exact = [
+            article_id
+            for article_id in unused_ids
+            if _source_label_matches_canonical_url(
+                candidate["label"], by_id[article_id][1]
+            )
+        ]
+        if len(label_exact) > 1:
+            raise RuntimeError("Source URL etiķete nav unikāla selected set; fail-closed")
+        if exact and label_exact and exact != label_exact:
+            raise RuntimeError("Source URL un etiķete ir pretrunīga; fail-closed")
         if len(exact) == 1:
             article_id = exact[0]
         elif len(exact) > 1:
             raise RuntimeError(
                 f"Source URL nav unikāls selected set: {candidate['url']}; fail-closed"
             )
+        elif len(label_exact) == 1:
+            article_id = label_exact[0]
         else:
             credible = [
                 article_id

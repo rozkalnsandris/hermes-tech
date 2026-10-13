@@ -197,6 +197,29 @@ class SelectedIdReconciliationTests(unittest.TestCase):
                 "ai",
             )
 
+    def test_exact_canonical_url_label_repairs_model_link_typo(self) -> None:
+        articles = self.articles()
+        canonical = "https://thenewstack.io/coding-agents-platform-teams/"
+        articles[0]["link"] = canonical
+        urls = [article["link"] for article in articles]
+        urls[0] = "https://thenewstack.io/thenewstack.io/coding-agents-platform-teams/"
+        labels = [article["title"] for article in articles]
+        labels[0] = canonical
+        with patch.object(digest_core, "log"):
+            resolved = digest_core._resolve_digest_selected_ids(
+                self.markdown(urls, labels), [1, 2, 3, 4, 5], articles, "devops"
+            )
+        self.assertEqual(resolved, [1, 2, 3, 4, 5])
+
+    def test_conflicting_canonical_label_and_url_fail_closed(self) -> None:
+        labels = ["https://source.test/2"] + [
+            f"Canonical release {index}" for index in range(2, 6)
+        ]
+        with self.assertRaisesRegex(RuntimeError, "pretrunīga"):
+            digest_core._resolve_digest_selected_ids(
+                self.markdown(labels=labels), [], self.articles(), "devops"
+            )
+
     def test_ambiguous_label_without_exact_url_fails_closed(self) -> None:
         articles = self.articles()
         articles[0]["title"] = "Alpha release notes"
@@ -287,6 +310,42 @@ Source: [Canonical title 5](https://model.test/five)
             )
         self.assertNotIn("https://model.test/", text)
         self.assertFalse(path.with_name(path.name + ".source-restore.tmp").exists())
+
+    def test_restores_canonical_source_when_model_repeats_hostname(self) -> None:
+        path = self.write_digest(
+            "<!-- selected_ids: 1,2,3,4,5 -->\n"
+            "[https://canonical.test/1](https://canonical.test/canonical.test/1)\n"
+            + "\n".join(
+                f"[Canonical title {i}](https://canonical.test/{i})"
+                for i in range(2, 6)
+            )
+            + "\n"
+        )
+        with patch.object(digest_core, "DB", self.db):
+            digest_core._restore_digest_source_links(path)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(
+            "[Vendor: Canonical title 1](https://canonical.test/1)", text
+        )
+        self.assertNotIn("canonical.test/canonical.test", text)
+
+    def test_conflicting_source_identities_leave_digest_untouched(self) -> None:
+        path = self.write_digest(
+            "<!-- selected_ids: 1,2,3,4,5 -->\n"
+            "[https://canonical.test/2](https://canonical.test/1)\n"
+            + "\n".join(
+                f"[Canonical title {i}](https://canonical.test/{i})"
+                for i in range(2, 6)
+            )
+            + "\n"
+        )
+        before = path.read_bytes()
+        with (
+            patch.object(digest_core, "DB", self.db),
+            self.assertRaisesRegex(RuntimeError, "pretrunīga"),
+        ):
+            digest_core._restore_digest_source_links(path)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_duplicate_selected_ids_fail_before_file_replacement(self) -> None:
         path = self.write_digest(

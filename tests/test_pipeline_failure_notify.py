@@ -55,6 +55,27 @@ class PipelineFailureNotifyTests(unittest.TestCase):
         self.assertEqual(segment, "")
         self.assertIn("pipeline exited", notify.extract_failure_detail(segment))
 
+    def test_daily_summary_uses_generator_root_error_not_runner_exit_code(self) -> None:
+        runner = (ROOT / "run_digests_core.sh").read_text(encoding="utf-8")
+        prefix = "def generation_error(category: str) -> str:"
+        suffix = "def publish_error(category: str) -> str:"
+        self.assertIn(prefix, runner)
+        self.assertIn(suffix, runner)
+        function_text = prefix + runner.split(prefix, 1)[1].split(suffix, 1)[0]
+        root_error = (
+            "2026-10-13 [devops] KĻŪDA: Source nevar unikāli sasaistīt "
+            "ar piegādātajiem kandidātiem"
+        )
+        segment = "\n".join([
+            "2026-10-13 [digest-runner] Sāku kategoriju: devops",
+            root_error,
+            "2026-10-13 [digest-runner] KĻŪDA: devops ģenerēšana beidzās ar kodu 1",
+            "2026-10-13 [digest-runner] Sāku kategoriju: ai",
+        ])
+        scope = {"log_text": segment}
+        exec(function_text, scope)
+        self.assertEqual(scope["generation_error"]("devops"), root_error)
+
     def test_runner_invokes_notifier_only_after_full_run_failure(self) -> None:
         runner = (ROOT / "run_digests.sh").read_text(encoding="utf-8")
         self.assertIn('export HERMES_TECH_ROOT="$BASE"', runner)
