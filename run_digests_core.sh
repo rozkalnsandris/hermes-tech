@@ -328,7 +328,9 @@ def generation_error(category: str) -> str:
     if exceptions:
         return exceptions[-1]
     errors = [line for line in stripped_lines if "KĻŪDA:" in line]
-    return errors[-1] if errors else "generation failed"
+    category_errors = [line for line in errors if "[digest-runner]" not in line]
+    relevant_errors = category_errors or errors
+    return relevant_errors[-1] if relevant_errors else "generation failed"
 
 def publish_error(category: str) -> str:
     marker = f"Publicēju: {category}"
