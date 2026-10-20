@@ -1,0 +1,144 @@
+{
+  "schema": "rozkalns.github-first-rdc-fallback.consumer.v1",
+  "status": "SOURCE_ADOPTION_ON_MERGE",
+  "repository": "rozkalnsandris/hermes-tech",
+  "upstream": {
+    "repository": "rozkalnsandris/ops-workflows",
+    "revision": "4e89b75d7f496dfb43fd9c1eb10a995fad53fdd8",
+    "document": "docs/GITHUB_FIRST_RDC_FALLBACK_V1.md",
+    "policy": "policy/github-first-rdc-fallback-v1.json"
+  },
+  "selection": {
+    "mandatory_per_step": true,
+    "github_when_equivalent": true,
+    "github_actions_when_applicable": true,
+    "rdc_for_convenience": false,
+    "order": [
+      "GITHUB_CONNECTED_TOOLS",
+      "GITHUB_HOSTED_CI_WHEN_APPLICABLE",
+      "MINIMAL_AUTHORIZED_RDC_IF_GITHUB_INCAPABLE",
+      "STOP"
+    ]
+  },
+  "rdc_exception": {
+    "genuinely_host_local": true,
+    "exact_github_capability_gap": true,
+    "ci_substitute_ruled_out_when_applicable": true,
+    "smallest_step_only": true,
+    "prior_exact_authority_required": true,
+    "public_safe_record_required": true,
+    "return_to_github_required": true,
+    "evidence_fields": [
+      "STEP",
+      "REPOSITORY_AND_TARGET",
+      "GITHUB_CAPABILITY_CHECKED",
+      "PRECISE_CAPABILITY_GAP",
+      "GITHUB_CI_NOT_EQUIVALENT_REASON",
+      "MINIMAL_RDC_OPERATION",
+      "EXISTING_AUTHORIZATION",
+      "GITHUB_RETURN_EVIDENCE"
+    ]
+  },
+  "fail_closed": {
+    "github_403_429_or_denial_never_rdc": true,
+    "github_timeout_or_tool_error_never_rdc": true,
+    "uncertain_dispatched_write_never_rdc": true,
+    "missing_owner_authority_stops": true,
+    "no_implicit_retry_rollback_cleanup": true,
+    "no_merge_live_deploy_settings_authority": true
+  },
+  "local_stricter": {
+    "editorial_safety_unchanged": true,
+    "publish_deploy_runtime_exact_live": true,
+    "host_root_cloudflare_secrets_exact_live": true,
+    "merge_separate_owner_gate": true,
+    "merge_not_live": true,
+    "github_only_distinct": true,
+    "auto_run_full_unavailable": true,
+    "simple_deploy_unchanged": true
+  },
+  "simple_deploy": {
+    "workflow": ".github/workflows/simple-deploy.yml",
+    "allowed_trigger_paths": [
+      "site/**",
+      "Dockerfile",
+      "deploy/**",
+      ".simple-deploy.json"
+    ],
+    "governance_changes_trigger_deploy": false
+  },
+  "cases": [
+    {
+      "name": "source-edit",
+      "github": true,
+      "ci": false,
+      "host": false,
+      "error": false,
+      "authority": true,
+      "expected": "GITHUB"
+    },
+    {
+      "name": "source-test-actions",
+      "github": false,
+      "ci": true,
+      "host": false,
+      "error": false,
+      "authority": true,
+      "expected": "GITHUB_ACTIONS"
+    },
+    {
+      "name": "rpi5-service-state",
+      "github": false,
+      "ci": false,
+      "host": true,
+      "error": false,
+      "authority": true,
+      "expected": "RDC_EXCEPTION"
+    },
+    {
+      "name": "rpi5-service-restart-unapproved",
+      "github": false,
+      "ci": false,
+      "host": true,
+      "error": false,
+      "authority": false,
+      "expected": "STOP"
+    },
+    {
+      "name": "github-permission-denied",
+      "github": false,
+      "ci": false,
+      "host": false,
+      "error": true,
+      "authority": true,
+      "expected": "STOP"
+    },
+    {
+      "name": "github-timeout-no-host-escape",
+      "github": false,
+      "ci": false,
+      "host": true,
+      "error": true,
+      "authority": true,
+      "expected": "STOP"
+    },
+    {
+      "name": "github-unavailable-no-host-purpose",
+      "github": false,
+      "ci": false,
+      "host": false,
+      "error": false,
+      "authority": true,
+      "expected": "STOP"
+    },
+    {
+      "name": "rdc-more-convenient-for-branch",
+      "github": true,
+      "ci": false,
+      "host": true,
+      "error": false,
+      "authority": true,
+      "expected": "GITHUB"
+    }
+  ]
+}

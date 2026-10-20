@@ -78,6 +78,16 @@ Its editorial review reference is:
 
 `~/.hermes/skills/devops/hermes-tech-digest/references/editorial-review.md`
 
+## GitHub-first / RDC fallback v1 — mandatory tool priority
+
+Accepted upstream: `rozkalnsandris/ops-workflows@4e89b75d7f496dfb43fd9c1eb10a995fad53fdd8`, `docs/GITHUB_FIRST_RDC_FALLBACK_V1.md`, `policy/github-first-rdc-fallback-v1.json`. Local machine adapter: `.github/github-first-rdc-v1.json`; consumer guide: `docs/GITHUB_FIRST_RDC_ADOPTION_V1.md`.
+
+- Classify **each step**. Connected GitHub tooling is mandatory for source/files, branch/commit, issue/PR, checks/reviews and canonical continuity when it can provide equivalent correctness and evidence. Prefer GitHub-hosted Actions for equivalent source tests. RDC shell `git`, `gh`, `curl` or local checkout is not a convenience replacement.
+- RDC is permitted only for a **genuinely host-local** action after proving the exact missing GitHub capability and, where applicable, why GitHub-hosted CI is not equivalent. Limit work to the minimal existing-authorized read/operation on the exact host and return to GitHub. Publication, deploy, services/runtime, protected material, secrets/credentials, permissions, Cloudflare and host/root mutations still require separately exact LIVE authority.
+- Before any RDC step, record a **public-safe** exception: `STEP`, `REPOSITORY_AND_TARGET`, `GITHUB_CAPABILITY_CHECKED`, `PRECISE_CAPABILITY_GAP`, `GITHUB_CI_NOT_EQUIVALENT_REASON`, `MINIMAL_RDC_OPERATION`, `EXISTING_AUTHORIZATION`, `GITHUB_RETURN_EVIDENCE`. Do not expose sensitive host/session artifacts in GitHub.
+- GitHub denial, 403/429, rate limit, tool failure, timeout, missing permission or uncertain dispatched mutation is **STOP**, never RDC alternate mutation, automatic retry, rollback or cleanup.
+- This ordinary GitHub-first priority is **not** the separate `GITHUB-ONLY` deferred-LIVE mode and grants no merge, publication/deploy, settings, credentials or production authority. Existing stricter local editorial and production rules remain authoritative.
+
 <!-- BEGIN FAST-LANE-V2.2-MANAGED -->
 ## FAST-LANE v2.2 Composite
 
