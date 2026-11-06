@@ -84,6 +84,37 @@ class CollectorParsingTests(unittest.TestCase):
             time.tzset()
 
 
+class CollectorFeedByteLimitTests(unittest.TestCase):
+    def test_exact_istio_source_gets_only_the_bounded_exception(self) -> None:
+        self.assertEqual(collector_core.ISTIO_FEED_MAX_BYTES, 3 * 1024 * 1024)
+        with patch.object(collector_core, "fetch_feed") as fetch:
+            collector_core.fetch_configured_feed(
+                "istio", "https://istio.io/latest/feed.xml"
+            )
+        fetch.assert_called_once_with(
+            "https://istio.io/latest/feed.xml",
+            max_bytes=3 * 1024 * 1024,
+        )
+
+    def test_other_source_names_or_urls_keep_normal_transport_limit(self) -> None:
+        for name, url in (
+            ("not-istio", "https://istio.io/latest/feed.xml"),
+            ("istio", "https://example.com/rss.xml"),
+            ("istio", "http://istio.io/latest/feed.xml"),
+            ("opentelemetry", "https://opentelemetry.io/blog/index.xml"),
+        ):
+            with self.subTest(name=name, url=url):
+                with patch.object(collector_core, "fetch_feed") as fetch:
+                    collector_core.fetch_configured_feed(name, url)
+                fetch.assert_called_once_with(url)
+
+    def test_enabled_source_matches_exact_override(self) -> None:
+        lines = (Path(__file__).resolve().parents[1] / "feeds.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        self.assertIn("istio|https://istio.io/latest/feed.xml|devops", lines)
+
+
 class CollectorSchemaStartupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp_obj = tempfile.TemporaryDirectory()

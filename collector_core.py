@@ -31,6 +31,17 @@ SOURCE_HEALTH = BASE / "data" / "source-health.json"
 
 MAX_CONTENT = 40000
 
+# This official full-content feed exceeds the normal 2 MiB response limit.
+# Only the exact configured source and URL may use this still-bounded exception.
+ISTIO_FEED_URL = "https://istio.io/latest/feed.xml"
+ISTIO_FEED_MAX_BYTES = 3 * 1024 * 1024
+
+
+def fetch_configured_feed(name: str, url: str):
+    if name == "istio" and url == ISTIO_FEED_URL:
+        return fetch_feed(url, max_bytes=ISTIO_FEED_MAX_BYTES)
+    return fetch_feed(url)
+
 
 def log(msg: str) -> None:
     line = f"{datetime.now().isoformat(timespec='seconds')} {msg}"
@@ -123,7 +134,7 @@ def main() -> int:
     for name, url, cat in feeds:
         conn.execute("INSERT OR IGNORE INTO sources(name) VALUES (?)", (name,))
         try:
-            fetched = fetch_feed(url)
+            fetched = fetch_configured_feed(name, url)
             parsed = feedparser.parse(fetched.body)
             if parsed.bozo and not parsed.entries:
                 raise RuntimeError(f"bozo: {parsed.bozo_exception}")
