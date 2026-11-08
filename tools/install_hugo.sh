@@ -26,26 +26,44 @@ release="https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-    --retry 3 --retry-all-errors \
-    "$release/$archive" --output "$work/$archive"
-curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
-    --retry 3 --retry-all-errors \
-    "$release/$checksums" --output "$work/$checksums"
+download_release_assets() {
+    curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+        --retry 3 --retry-all-errors \
+        "$release/$archive" --output "$work/$archive" || return 1
+    curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+        --retry 3 --retry-all-errors \
+        "$release/$checksums" --output "$work/$checksums" || return 1
+}
 
-awk -v filename="$archive" '$2 == filename { print; found=1 } END { exit !found }' \
-    "$work/$checksums" > "$work/expected.sha256" || {
-        echo "KĻŪDA: oficiālajā checksum failā nav $archive" >&2
+if download_release_assets; then
+    awk -v filename="$archive" '$2 == filename { print; found=1 } END { exit !found }' \
+        "$work/$checksums" > "$work/expected.sha256" || {
+            echo "KĻŪDA: oficiālajā checksum failā nav $archive" >&2
+            exit 1
+        }
+    (
+        cd "$work"
+        sha256sum --check expected.sha256
+    )
+    tar -xzf "$work/$archive" -C "$work" hugo
+    mkdir -p "$DEST_DIR"
+    install -m 0755 "$work/hugo" "$DEST_DIR/hugo"
+else
+    echo "BRĪDINĀJUMS: Hugo release asset download neizdevās; būvēju tieši v$HUGO_VERSION no avota." >&2
+    command -v go >/dev/null 2>&1 || {
+        echo "KĻŪDA: fallback būvei nav atrasta komanda 'go'" >&2
         exit 1
     }
-(
-    cd "$work"
-    sha256sum --check expected.sha256
-)
-
-tar -xzf "$work/$archive" -C "$work" hugo
-mkdir -p "$DEST_DIR"
-install -m 0755 "$work/hugo" "$DEST_DIR/hugo"
+    command -v cc >/dev/null 2>&1 || {
+        echo "KĻŪDA: Hugo Extended fallback būvei nav atrasts C kompilators 'cc'" >&2
+        exit 1
+    }
+    mkdir -p "$work/go-bin"
+    GOBIN="$work/go-bin" CGO_ENABLED=1 \
+        go install -tags extended "github.com/gohugoio/hugo@v${HUGO_VERSION}"
+    mkdir -p "$DEST_DIR"
+    install -m 0755 "$work/go-bin/hugo" "$DEST_DIR/hugo"
+fi
 
 version_output=$("$DEST_DIR/hugo" version)
 [[ "$version_output" == *"v${HUGO_VERSION}"* && "$version_output" == *"extended"* ]] || {
