@@ -28,7 +28,7 @@ python tools/check_dependency_sync.py
 python tools/check_repository_hygiene.py
 python - <<'PY_BOOTSTRAP'
 from importlib.metadata import version
-expected = {"pip": "26.1.2", "setuptools": "83.0.0"}
+expected = {"pip": "26.3", "setuptools": "83.0.0"}
 actual = {name: version(name) for name in expected}
 if actual != expected:
     raise SystemExit(f"KĻŪDA: packaging tool drift: expected={expected}, actual={actual}")
