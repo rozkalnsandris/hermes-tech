@@ -5,7 +5,7 @@ description = "Hermes Tech collection, digest generation, and Hugo publication p
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "feedparser==6.0.12",
-  "Pillow==12.3.0",
+  "Pillow==13.0.0",
   "requests==2.34.2",
 ]
 
