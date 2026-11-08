@@ -66,7 +66,10 @@ class MainPolicyPayloadTests(unittest.TestCase):
         )
         self.assertEqual(
             rules["required_status_checks"]["parameters"]["required_status_checks"],
-            [{"context": "validate", "integration_id": 15368}],
+            [
+                {"context": "validate", "integration_id": 15368},
+                {"context": "contract", "integration_id": 15368},
+            ],
         )
         self.assertTrue(
             rules["required_status_checks"]["parameters"][
@@ -228,6 +231,58 @@ class MainPolicyPreflightTests(unittest.TestCase):
                 self.repository,
                 sha,
                 "validate",
+            )
+
+    def test_policy_checks_require_both_checks_from_same_app(self) -> None:
+        sha = "e" * 40
+        path = (
+            "/repos/rozkalnsandris/hermes-tech/commits/"
+            f"{sha}/check-runs?per_page=100"
+        )
+        api = RecordingApi({
+            ("GET", path): {"check_runs": [
+                {"name": "validate", "conclusion": "success", "app": {"id": 15368}},
+                {"name": "contract", "conclusion": "success", "app": {"id": 15368}},
+            ]}
+        })
+        self.assertEqual(
+            policy.require_policy_status_checks(
+                api, self.repository, sha, "validate"
+            ),
+            policy.StatusCheckIdentity("validate", 15368),
+        )
+
+    def test_policy_checks_reject_missing_contract(self) -> None:
+        sha = "f" * 40
+        path = (
+            "/repos/rozkalnsandris/hermes-tech/commits/"
+            f"{sha}/check-runs?per_page=100"
+        )
+        api = RecordingApi({
+            ("GET", path): {"check_runs": [
+                {"name": "validate", "conclusion": "success", "app": {"id": 15368}},
+            ]}
+        })
+        with self.assertRaisesRegex(policy.PolicyError, "contract"):
+            policy.require_policy_status_checks(
+                api, self.repository, sha, "validate"
+            )
+
+    def test_policy_checks_reject_mismatched_app_id(self) -> None:
+        sha = "a" * 40
+        path = (
+            "/repos/rozkalnsandris/hermes-tech/commits/"
+            f"{sha}/check-runs?per_page=100"
+        )
+        api = RecordingApi({
+            ("GET", path): {"check_runs": [
+                {"name": "validate", "conclusion": "success", "app": {"id": 15368}},
+                {"name": "contract", "conclusion": "success", "app": {"id": 999}},
+            ]}
+        })
+        with self.assertRaisesRegex(policy.PolicyError, "same GitHub App"):
+            policy.require_policy_status_checks(
+                api, self.repository, sha, "validate"
             )
 
     def test_apply_confirmation_is_checked_before_api_access(self) -> None:
