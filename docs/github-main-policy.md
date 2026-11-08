@@ -10,7 +10,7 @@ deploy the site.
 Hermes Tech needs two different trust paths:
 
 - human code, configuration, template, and documentation changes must use a
-  pull request, pass `validate`, and be squash-merged;
+  pull request, pass `validate` and `contract`, and be squash-merged;
 - the production publisher may fast-forward one tightly validated generated
   digest commit directly to `main`.
 
@@ -35,14 +35,14 @@ This ruleset applies to `refs/heads/main` and enforces:
 
 - changes enter through a pull request;
 - only squash merge is allowed;
-- the `validate` status check must pass against the latest `main`;
+- the `validate` and `contract` status checks must pass against the latest `main`;
 - review threads must be resolved.
 
-The preflight reads the successful `validate` check run from the exact supplied
-`main` SHA and resolves its GitHub App integration ID. The required-check rule
-is bound to both the context and that integration ID. Preflight fails if the
-check has no App identity or if the same context was produced successfully by
-more than one App integration.
+The preflight reads successful `validate` and `contract` check runs from
+the exact supplied `main` SHA and verifies that both come from the same
+GitHub App integration. The required-check rule binds both contexts to that
+integration ID. Preflight fails if either check has no App identity, if the
+same context was produced by multiple Apps, or if the two checks differ.
 
 The only bypass actor is the repository's deploy-key actor. GitHub represents
 that actor without a key-specific ID, so the preflight requires exactly one
@@ -148,7 +148,7 @@ Successful output must contain:
 
 - `"verified": true`;
 - the exact repository and `main` SHA;
-- the required-check context and GitHub App integration ID;
+- the required `validate` and `contract` contexts with their shared GitHub App integration ID;
 - the expected deploy-key ID and title;
 - both managed ruleset IDs;
 - merge settings with only squash enabled.

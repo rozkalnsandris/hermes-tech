@@ -204,7 +204,12 @@ def code_gate_ruleset_payload(status_check: StatusCheckIdentity) -> dict[str, An
                 "type": "required_status_checks",
                 "parameters": {
                     "do_not_enforce_on_create": False,
-                    "required_status_checks": [status_check.as_ruleset_entry()],
+                    "required_status_checks": [
+                        status_check.as_ruleset_entry(),
+                        StatusCheckIdentity(
+                            "contract", status_check.integration_id
+                        ).as_ruleset_entry(),
+                    ],
                     "strict_required_status_checks_policy": True,
                 },
             },
@@ -286,6 +291,23 @@ def require_successful_check(
         )
     integration_id = next(iter(integration_ids))
     return StatusCheckIdentity(status_check, integration_id)
+
+
+def require_policy_status_checks(
+    api: GitHubApi,
+    repository: RepositoryRef,
+    expected_sha: str,
+    status_check: str,
+) -> StatusCheckIdentity:
+    if status_check != "validate":
+        raise PolicyError("main policy requires the validate status check")
+    validate = require_successful_check(api, repository, expected_sha, "validate")
+    contract = require_successful_check(api, repository, expected_sha, "contract")
+    if validate.integration_id != contract.integration_id:
+        raise PolicyError(
+            "validate and contract must come from the same GitHub App integration"
+        )
+    return validate
 
 
 def require_single_write_deploy_key(
@@ -491,7 +513,7 @@ def preflight(
         raise PolicyError("GitHub repository response is not an object")
     require_repository_state(repo_payload, repository)
     require_exact_main_sha(api, repository, expected_sha)
-    status_identity = require_successful_check(api, repository, expected_sha, status_check)
+    status_identity = require_policy_status_checks(api, repository, expected_sha, status_check)
     deploy_key = require_single_write_deploy_key(api, repository, deploy_key_title)
     require_no_classic_branch_protection(api, repository)
     summaries = list_repository_rulesets(api, repository)
@@ -500,6 +522,7 @@ def preflight(
         "repository": repository.full_name,
         "main_sha": expected_sha,
         "status_check": status_identity.as_evidence(),
+        "additional_status_check": StatusCheckIdentity("contract", status_identity.integration_id).as_evidence(),
         "write_deploy_key": {
             "id": deploy_key["id"],
             "title": deploy_key["title"],
@@ -575,7 +598,7 @@ def verify_policy(
     require_repository_state(repo_payload, repository)
     verify_repository_settings(repo_payload)
     require_exact_main_sha(api, repository, expected_sha)
-    status_identity = require_successful_check(api, repository, expected_sha, status_check)
+    status_identity = require_policy_status_checks(api, repository, expected_sha, status_check)
     deploy_key = require_single_write_deploy_key(api, repository, deploy_key_title)
     if require_no_classic:
         require_no_classic_branch_protection(api, repository)
@@ -584,6 +607,7 @@ def verify_policy(
         "repository": repository.full_name,
         "main_sha": expected_sha,
         "status_check": status_identity.as_evidence(),
+        "additional_status_check": StatusCheckIdentity("contract", status_identity.integration_id).as_evidence(),
         "write_deploy_key": {
             "id": deploy_key["id"],
             "title": deploy_key["title"],
