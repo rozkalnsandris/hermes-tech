@@ -76,13 +76,43 @@ class PipelineFailureNotifyTests(unittest.TestCase):
         exec(function_text, scope)
         self.assertEqual(scope["generation_error"]("devops"), root_error)
 
+
+    def test_direct_run_captures_summary_and_error_in_same_file(self):
+        runner = (ROOT / "run_digests.sh").read_text(encoding="utf-8")
+        core = (ROOT / "run_digests_core.sh").read_text(encoding="utf-8")
+
+        self.assertIn('export HERMES_PIPELINE_LOG="$RUN_LOG"', runner)
+        self.assertIn('bash -c "$PATCHED" "$CORE" 2>&1 | tee "$RUN_LOG"', runner)
+        self.assertIn('pipeline_status=("${PIPESTATUS[@]}")', runner)
+        self.assertIn('notify_early_failure "$rc" "$RUN_LOG" 0', runner)
+        self.assertIn('trap \'rm -f -- "$RUN_LOG"\' EXIT', runner)
+        self.assertIn('${HERMES_PIPELINE_LOG:-$BASE/logs/digest-cron.log}', core)
+
+        root_error = (
+            "2026-11-09 [devops] KĻŪDA: Source nevar unikāli sasaistīt "
+            "ar piegādātajiem kandidātiem"
+        )
+        current_run = "\n".join([
+            "2026-11-09 [digest-runner] Sāku kategoriju: devops",
+            root_error,
+            "2026-11-09 [digest-runner] Sāku kategoriju: ai",
+            "2026-11-09 [digest-runner] Telegram pipeline kopsavilkums nosūtīts",
+        ])
+        with tempfile.TemporaryDirectory() as raw_tmp:
+            log = Path(raw_tmp) / "run.log"
+            log.write_text(current_run, encoding="utf-8")
+            segment = notify.read_appended_log(log, 0)
+
+        self.assertIn(root_error, segment)
+        self.assertTrue(notify.normal_summary_was_sent(segment))
+
     def test_runner_invokes_notifier_only_after_full_run_failure(self) -> None:
         runner = (ROOT / "run_digests.sh").read_text(encoding="utf-8")
         self.assertIn('export HERMES_TECH_ROOT="$BASE"', runner)
         self.assertIn("if (( $# > 0 )); then", runner)
         self.assertIn('exec bash -c "$PATCHED" "$CORE" "$@"', runner)
         self.assertIn('bash -c "$PATCHED" "$CORE"', runner)
-        self.assertIn("if (( rc != 0 )); then", runner)
+        self.assertIn("elif (( rc != 0 )); then", runner)
         self.assertIn("tools/notify_pipeline_failure.py", runner)
         self.assertIn('exit "$rc"', runner)
 

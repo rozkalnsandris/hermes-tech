@@ -242,7 +242,7 @@ set +e
 "$PYTHON" - \
     "$BASE/digest.py" \
     "$BASE/.env" \
-    "$BASE/logs/digest-cron.log" \
+    "${HERMES_PIPELINE_LOG:-$BASE/logs/digest-cron.log}" \
     "$TODAY" \
     "$overall_rc" \
     "$published_csv" \

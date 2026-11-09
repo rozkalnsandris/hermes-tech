@@ -207,7 +207,7 @@ class PublicationReadinessRunnerContractTests(unittest.TestCase):
     def test_readiness_gate_precedes_full_core_and_has_distinct_exit(self) -> None:
         text = RUNNER.read_text(encoding="utf-8")
         gate = 'READINESS_JSON=$("$PYTHON" "$READINESS" check'
-        full_core = 'bash -c "$PATCHED" "$CORE"\nrc=$?'
+        full_core = 'bash -c "$PATCHED" "$CORE" 2>&1 | tee "$RUN_LOG"\npipeline_status=("${PIPESTATUS[@]}")'
         self.assertIn(gate, text)
         self.assertIn(full_core, text)
         self.assertLess(text.index(gate), text.index(full_core))
