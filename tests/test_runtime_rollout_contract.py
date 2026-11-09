@@ -88,7 +88,7 @@ class RuntimeRolloutContractTests(unittest.TestCase):
             self.assertIn(marker, text)
         self.assertNotIn("flock 9\n", text)
 
-    def test_hugo_modes_and_phase_safe_rollback_cover_incident_115_failures(self) -> None:
+    def test_hugo_modes_and_fail_stop_preserve_post_mutation_state(self) -> None:
         text = read(HELPER)
         for marker in (
             'chmod 755 "$WORK/site-new"',
@@ -96,15 +96,32 @@ class RuntimeRolloutContractTests(unittest.TestCase):
             'find "$WORK/site-new" -type f -exec chmod 644 {} +',
             "STAGING_PUBLIC_PERMISSIONS=PASS",
             "PRODUCTION_PUBLIC_PERMISSIONS=PASS",
-            "OLD_VENV_MOVED=0",
-            "GIT_MOVED=0",
-            "PUBLIC_BACKUP_READY=0",
-            "rollback_runtime",
-            "RUNTIME_ROLLOUT_ROLLBACK=PASS",
+            "RUNTIME_ROLLOUT_RESULT=FAIL_STOP_NO_ROLLBACK",
+            "ROLLBACK_PERFORMED=false",
+            "AUTOMATIC_CLEANUP_PERFORMED=false",
+            "FAILURE_WORKDIR_PRESERVED=",
         ):
             self.assertIn(marker, text)
-        self.assertNotIn("ACTUAL_SENSITIVE", text)
-        self.assertNotIn("EXPECTED_SENSITIVE", text)
+        for forbidden in (
+            "rollback_runtime",
+            "reset --hard",
+            "rsync-rollback",
+            "RUNTIME_ROLLOUT_ROLLBACK=PASS",
+        ):
+            self.assertNotIn(forbidden, text)
+
+    def test_post_simple_deploy_rollout_does_not_mutate_legacy_pull_timer(self) -> None:
+        text = read(HELPER)
+        self.assertIn("PULL_DEPLOY_TIMER_MUTATED=false", text)
+        for forbidden in (
+            "systemctl disable --now hermes-tech-pull-deploy.timer",
+            "systemctl enable hermes-tech-pull-deploy.timer",
+            "systemctl start hermes-tech-pull-deploy.timer",
+            "systemctl stop hermes-tech-pull-deploy.timer",
+            "systemctl stop hermes-tech-pull-deploy.service",
+            "restore_timer_state",
+        ):
+            self.assertNotIn(forbidden, text)
 
     def test_preflight_only_and_control_plane_handoff_are_explicit(self) -> None:
         helper = read(HELPER)
@@ -114,6 +131,8 @@ class RuntimeRolloutContractTests(unittest.TestCase):
         self.assertIn("RUNTIME_ROLLOUT_PREFLIGHT=PASS", helper)
         self.assertIn("CONTROL_PLANE_ACTIVATION_REQUIRED=true", helper)
         self.assertIn("WAIT_CONTROL_PLANE_APPROVAL", helper)
+        self.assertIn('INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"', helper)
+        self.assertIn("INSTALLED_CONTROL_PLANE_CURRENT=true", helper)
         self.assertIn("tools/pull-deploy/", classifier)
         self.assertIn("/usr/local/sbin/hermes-tech-runtime-rollout", installer)
         self.assertIn("NOPASSWD: /usr/local/sbin/hermes-tech-runtime-rollout *", installer)
