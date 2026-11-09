@@ -72,6 +72,7 @@ class RuntimeRolloutContractTests(unittest.TestCase):
             "DATABASE_MIGRATIONS_EXECUTED=false",
         ):
             self.assertIn(marker, text)
+        self.assertIn('payload.get("quick_check") != ["ok"]', text)
         self.assertNotIn("sqlite_schema.py apply", text)
 
     def test_pending_digests_and_locks_are_bounded_and_immutable(self) -> None:
