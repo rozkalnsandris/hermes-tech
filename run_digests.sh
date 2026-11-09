@@ -60,9 +60,11 @@ fi
 
 notify_early_failure() {
     local rc=$1
+    local evidence_log=${2:-$LOG_FILE}
+    local evidence_start=${3:-$LOG_START_SIZE}
     if NOTIFIER=$(resolve_runtime_file tools/notify_pipeline_failure.py); then
         set +e
-        "$PYTHON" "$NOTIFIER" "$BASE" "$LOG_FILE" "$LOG_START_SIZE" "$rc"
+        "$PYTHON" "$NOTIFIER" "$BASE" "$evidence_log" "$evidence_start" "$rc"
         local notify_rc=$?
         set -e
         if (( notify_rc != 0 )); then
@@ -142,13 +144,32 @@ fi
 
 echo "PUBLISH_READINESS=READY"
 
-set +e
-bash -c "$PATCHED" "$CORE"
-rc=$?
-set -e
+# Capture this invocation independently of cron redirection. The logfile is
+# private (umask 077) and discarded after the summary/fallback decision.
+RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/hermes-tech-digest.XXXXXXXX") || {
+    echo "KĻŪDA: nevar izveidot digest run diagnostikas failu" >&2
+    notify_early_failure 1
+    exit 1
+}
+trap 'rm -f -- "$RUN_LOG"' EXIT
+export HERMES_PIPELINE_LOG="$RUN_LOG"
 
-if (( rc != 0 )); then
-    notify_early_failure "$rc"
+set +e
+bash -c "$PATCHED" "$CORE" 2>&1 | tee "$RUN_LOG"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+rc=${pipeline_status[0]}
+capture_rc=${pipeline_status[1]}
+
+if (( capture_rc != 0 )); then
+    # An incomplete capture cannot reliably establish summary-delivery status.
+    # Avoid sending a potentially contradictory second Telegram alert.
+    echo "KĻŪDA: digest run diagnostikas uztveršana neizdevās (rc=$capture_rc)" >&2
+    if (( rc == 0 )); then
+        rc=1
+    fi
+elif (( rc != 0 )); then
+    notify_early_failure "$rc" "$RUN_LOG" 0
 fi
 
 exit "$rc"
