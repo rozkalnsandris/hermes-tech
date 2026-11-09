@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import stat
 import subprocess
 import unittest
 
@@ -25,6 +26,7 @@ class RuntimeRolloutContractTests(unittest.TestCase):
         self.assertIn("runtime rollout helper must run as root through sudo", helper)
         self.assertIn("runtime rollout must start from the release-control worktree", launcher)
         self.assertIn("sudo --non-interactive \"$HELPER\"", launcher)
+        self.assertTrue(LAUNCHER.stat().st_mode & stat.S_IXUSR)
         self.assertNotIn("ExecStart=/usr/local/sbin/hermes-tech-runtime-rollout", helper)
         self.assertNotIn("ExecStart=/usr/local/sbin/hermes-tech-runtime-rollout", launcher)
 
