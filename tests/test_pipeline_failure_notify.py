@@ -112,7 +112,7 @@ class PipelineFailureNotifyTests(unittest.TestCase):
         self.assertIn("if (( $# > 0 )); then", runner)
         self.assertIn('exec bash -c "$PATCHED" "$CORE" "$@"', runner)
         self.assertIn('bash -c "$PATCHED" "$CORE"', runner)
-        self.assertIn("if (( rc != 0 )); then", runner)
+        self.assertIn("elif (( rc != 0 )); then", runner)
         self.assertIn("tools/notify_pipeline_failure.py", runner)
         self.assertIn('exit "$rc"', runner)
 
