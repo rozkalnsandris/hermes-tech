@@ -396,7 +396,7 @@ if payload.get("needs_change") is not False:
     raise SystemExit("SQLite schema change is required; runtime rollout refuses to apply it")
 if payload.get("apply_safe") is not True:
     raise SystemExit("SQLite preflight is not apply-safe")
-if payload.get("quick_check") != "ok":
+if payload.get("quick_check") != ["ok"]:
     raise SystemExit(f"SQLite quick_check is not ok: {payload.get('quick_check')!r}")
 PY_SQLITE_PREFLIGHT
 DB_BACKUP="$EVIDENCE_DIR/hermes-pre-runtime.sqlite"
