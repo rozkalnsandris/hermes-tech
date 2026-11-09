@@ -136,7 +136,7 @@ class RuntimeRolloutContractTests(unittest.TestCase):
         self.assertIn('INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"', helper)
         self.assertIn("INSTALLED_CONTROL_PLANE_CURRENT=true", helper)
         self.assertIn("tools/pull-deploy/", classifier)
-        self.assertIn('[[ -x "$SOURCE_WORKTREE/$SOURCE_RUNTIME_LAUNCHER_REL" ]]\', installer)
+        self.assertIn('[[ -x "$SOURCE_WORKTREE/$SOURCE_RUNTIME_LAUNCHER_REL" ]]', installer)
         self.assertIn("/usr/local/sbin/hermes-tech-runtime-rollout", installer)
         self.assertIn("NOPASSWD: /usr/local/sbin/hermes-tech-runtime-rollout *", installer)
 
