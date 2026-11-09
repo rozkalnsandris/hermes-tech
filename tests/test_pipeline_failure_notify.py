@@ -32,7 +32,7 @@ class PipelineFailureNotifyTests(unittest.TestCase):
         )
         self.assertRegex(
             staged.stdout,
-            r"^100755 [0-9a-f]{40} 0\\trun_digests\\.sh\\n?$",
+            r"^100755 [0-9a-f]{40} 0\trun_digests\.sh\n?$",
             "run_digests.sh must be tracked by Git with mode 100755",
         )
 
