@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import stat
+import subprocess
 import tempfile
 import unittest
 
@@ -15,6 +17,25 @@ SPEC.loader.exec_module(notify)
 
 
 class PipelineFailureNotifyTests(unittest.TestCase):
+    def test_digest_runner_is_executable_in_git_and_checkout(self) -> None:
+        runner = ROOT / "run_digests.sh"
+        self.assertTrue(
+            runner.stat().st_mode & stat.S_IXUSR,
+            "run_digests.sh must have the owner executable bit in the checkout",
+        )
+
+        staged = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "--stage", "--", "run_digests.sh"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        self.assertRegex(
+            staged.stdout,
+            r"^100755 [0-9a-f]{40} 0\\trun_digests\\.sh\\n?$",
+            "run_digests.sh must be tracked by Git with mode 100755",
+        )
+
     def test_reads_only_bytes_appended_by_current_run(self) -> None:
         with tempfile.TemporaryDirectory() as raw_tmp:
             path = Path(raw_tmp) / "digest-cron.log"
