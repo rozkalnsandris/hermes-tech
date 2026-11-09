@@ -30,6 +30,7 @@ SOURCE='/home/andris/hermes-tech-worktrees/release-control'
 OWNER='andris'
 OWNER_HOME='/home/andris'
 STATE_ROOT='/home/andris/.local/state/hermes-tech-main-deploy'
+INSTALLED_CONTROL_PLANE="$STATE_ROOT/installed-control-plane-sha"
 BACKUP_ROOT="$STATE_ROOT/runtime-backups"
 POLL_LOCK="$STATE_ROOT/poll.lock"
 DIGEST_LOCK="$PRIMARY/.digest-pipeline.lock"
@@ -47,7 +48,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 for command_name in \
     awk bash chmod chown curl find flock gcc gh git id install make mkdir mktemp mv \
-    python3 readlink rm rsync runuser sha256sum stat systemctl tar tee touch; do
+    python3 readlink rm rsync runuser sha256sum stat tar tee touch; do
     command -v "$command_name" >/dev/null 2>&1 || fail "required command is missing: $command_name"
 done
 [[ -x "$CLASSIFIER" && ! -L "$CLASSIFIER" ]] || fail 'installed deploy-impact classifier is missing or unsafe'
@@ -75,28 +76,6 @@ owner_run() {
         "$@"
 }
 
-restore_timer_state() {
-    local enabled=$1
-    local active=$2
-    if [[ "$enabled" == enabled ]]; then
-        systemctl enable hermes-tech-pull-deploy.timer >/dev/null 2>&1 || return 1
-    else
-        systemctl disable hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
-    fi
-    if [[ "$active" == active ]]; then
-        systemctl start hermes-tech-pull-deploy.timer >/dev/null 2>&1 || return 1
-    else
-        systemctl stop hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
-    fi
-}
-
-TIMER_ENABLED_BEFORE=$(systemctl is-enabled hermes-tech-pull-deploy.timer 2>/dev/null || true)
-TIMER_ACTIVE_BEFORE=$(systemctl is-active hermes-tech-pull-deploy.timer 2>/dev/null || true)
-[[ "$TIMER_ENABLED_BEFORE" == enabled || "$TIMER_ENABLED_BEFORE" == disabled ]] \
-    || fail "unexpected timer enabled state: $TIMER_ENABLED_BEFORE"
-[[ "$TIMER_ACTIVE_BEFORE" == active || "$TIMER_ACTIVE_BEFORE" == inactive ]] \
-    || fail "unexpected timer active state: $TIMER_ACTIVE_BEFORE"
-
 WORK=''
 OLD_SHA=''
 OLD_VENV_BACKUP=''
@@ -106,8 +85,6 @@ PUBLIC_BACKUP_READY=0
 OLD_VENV_MOVED=0
 GIT_MOVED=0
 SUCCESS=0
-KEEP_TIMER_DISABLED=0
-ROLLBACK_RESULT='not-required'
 
 declare -a PENDING_DIGEST_PATHS=()
 declare -A PENDING_DIGEST_SHA256=()
@@ -191,66 +168,31 @@ verify_database_unchanged() {
     [[ "$actual" == "$DB_SHA_BEFORE" ]]
 }
 
-rollback_runtime() {
-    local rc=0
-    printf 'ROLLBACK: restoring pre-rollout production state\n'
-    set +e
-
-    if (( PUBLIC_BACKUP_READY == 1 )) && [[ -d "$WORK/public-before" ]]; then
-        rsync -a --delete "$WORK/public-before/" "$PRIMARY/site/public/" \
-            >"$EVIDENCE_DIR/rsync-rollback.log" 2>&1 || rc=1
-        chown -R "$OWNER:$(id -gn "$OWNER")" "$PRIMARY/site/public" || rc=1
-    fi
-
-    if (( GIT_MOVED == 1 )) && [[ -n "$OLD_SHA" ]]; then
-        owner_git "$PRIMARY" reset --hard "$OLD_SHA" \
-            >"$EVIDENCE_DIR/git-rollback.log" 2>&1 || rc=1
-    fi
-
-    if (( OLD_VENV_MOVED == 1 )) && [[ -n "$OLD_VENV_BACKUP" && -d "$OLD_VENV_BACKUP" ]]; then
-        rm -rf -- "$PRIMARY/venv" || rc=1
-        mv -- "$OLD_VENV_BACKUP" "$PRIMARY/venv" || rc=1
-        chown -R "$OWNER:$(id -gn "$OWNER")" "$PRIMARY/venv" || rc=1
-    fi
-
-    verify_pending_digest_state || rc=1
-    verify_database_unchanged || rc=1
-    curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" \
-        >"$EVIDENCE_DIR/rollback-site.html" || rc=1
-
-    if ! restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE"; then
-        rc=1
-    fi
-
-    set -e
-    if (( rc == 0 )); then
-        ROLLBACK_RESULT='pass'
-        printf 'RUNTIME_ROLLOUT_ROLLBACK=PASS\n'
-        return 0
-    fi
-    ROLLBACK_RESULT='fail'
-    printf 'RUNTIME_ROLLOUT_ROLLBACK=FAIL\n' >&2
-    return 1
-}
-
 finish() {
     local original_rc=$?
-    local final_rc=$original_rc
+    local observed_sha='UNKNOWN'
     trap - EXIT
 
-    if (( original_rc != 0 && MUTATION_STARTED == 1 )); then
-        if ! rollback_runtime; then
-            final_rc=2
+    observed_sha=$(owner_git "$PRIMARY" rev-parse HEAD 2>/dev/null || printf 'UNKNOWN')
+    if (( original_rc != 0 )); then
+        printf 'RUNTIME_ROLLOUT_RESULT=FAIL_STOP_NO_ROLLBACK\n' >&2
+        printf 'SOURCE_SHA=%s\n' "$TARGET_SHA" >&2
+        printf 'PRODUCTION_SHA=%s\n' "$observed_sha" >&2
+        printf 'PRODUCTION_MUTATION_STARTED=%s\n' "$MUTATION_STARTED" >&2
+        printf 'ROLLBACK_PERFORMED=false\n' >&2
+        printf 'AUTOMATIC_CLEANUP_PERFORMED=false\n' >&2
+        if [[ -n "$WORK" && -d "$WORK" ]]; then
+            printf 'FAILURE_WORKDIR_PRESERVED=%s\n' "$WORK" >&2
+        else
+            printf 'FAILURE_WORKDIR_PRESERVED=NONE\n' >&2
         fi
-    elif (( SUCCESS == 0 )); then
-        restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" || final_rc=2
+        printf 'DATABASE_MIGRATIONS_EXECUTED=false\n' >&2
+    elif [[ -n "$WORK" && -d "$WORK" ]]; then
+        rm -rf -- "$WORK"
     fi
 
-    if [[ -n "$WORK" && -d "$WORK" ]]; then
-        rm -rf -- "$WORK" || true
-    fi
     chown -R "$OWNER:$OWNER" "$EVIDENCE_DIR" || true
-    exit "$final_rc"
+    exit "$original_rc"
 }
 trap finish EXIT
 trap 'exit 130' INT
@@ -258,11 +200,7 @@ trap 'exit 143' TERM
 
 printf 'RUNTIME_ROLLOUT_TARGET=%s\n' "$TARGET_SHA"
 printf 'RUNTIME_ROLLOUT_MODE=%s\n' "$MODE"
-printf 'TIMER_ENABLED_BEFORE=%s\n' "$TIMER_ENABLED_BEFORE"
-printf 'TIMER_ACTIVE_BEFORE=%s\n' "$TIMER_ACTIVE_BEFORE"
-
-systemctl disable --now hermes-tech-pull-deploy.timer >/dev/null 2>&1 || true
-systemctl stop hermes-tech-pull-deploy.service >/dev/null 2>&1 || true
+printf 'PULL_DEPLOY_TIMER_MUTATED=false\n'
 
 install -d -o "$OWNER" -g "$OWNER" -m 0700 "$STATE_ROOT" "$BACKUP_ROOT"
 for lock_path in "$POLL_LOCK" "$DIGEST_LOCK" "$COLLECTOR_LOCK" "$PUBLISH_LOCK"; do
@@ -486,11 +424,10 @@ verify_pending_digest_state || fail 'pending digest bytes changed during preflig
 verify_database_unchanged || fail 'database changed during preflight'
 
 if [[ "$MODE" == --preflight-only ]]; then
-    restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" \
-        || fail 'failed to restore timer after preflight-only run'
     SUCCESS=1
     printf 'RUNTIME_ROLLOUT_PREFLIGHT=PASS\n'
     printf 'PRODUCTION_CHANGED=false\n'
+    printf 'PULL_DEPLOY_TIMER_MUTATED=false\n'
     printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
     printf 'PENDING_GENERATED_DIGESTS_PRESERVED=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
     exit 0
@@ -544,8 +481,17 @@ verify_database_unchanged || fail 'database bytes changed during runtime rollout
 curl --fail --silent --show-error --max-time 20 "$PUBLIC_URL" >"$EVIDENCE_DIR/post-site.html"
 printf 'PUBLIC_SITE=PASS\n'
 
-if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
-    KEEP_TIMER_DISABLED=1
+INSTALLED_CONTROL_PLANE_CURRENT=false
+INSTALLED_CONTROL_PLANE_SHA=''
+if [[ -f "$INSTALLED_CONTROL_PLANE" && ! -L "$INSTALLED_CONTROL_PLANE" ]]; then
+    IFS= read -r INSTALLED_CONTROL_PLANE_SHA <"$INSTALLED_CONTROL_PLANE" || true
+    if [[ "$INSTALLED_CONTROL_PLANE_SHA" == "$TARGET_SHA" ]]; then
+        INSTALLED_CONTROL_PLANE_CURRENT=true
+    fi
+fi
+printf 'INSTALLED_CONTROL_PLANE_CURRENT=%s\n' "$INSTALLED_CONTROL_PLANE_CURRENT"
+
+if [[ "$CONTROL_PLANE_CHANGED" == true && "$INSTALLED_CONTROL_PLANE_CURRENT" != true ]]; then
     owner_run "$READINESS" record \
         --state-root "$STATE_ROOT" \
         --env-file "$PRIMARY/.env" \
@@ -554,8 +500,6 @@ if [[ "$CONTROL_PLANE_CHANGED" == true ]]; then
         --production-sha "$TARGET_SHA" || true
     printf 'CONTROL_PLANE_ACTIVATION_REQUIRED=true\n'
 else
-    restore_timer_state "$TIMER_ENABLED_BEFORE" "$TIMER_ACTIVE_BEFORE" \
-        || fail 'failed to restore pull-deploy timer after runtime rollout'
     owner_run "$READINESS" record \
         --state-root "$STATE_ROOT" \
         --env-file "$PRIMARY/.env" \
@@ -575,10 +519,4 @@ printf 'PENDING_GENERATED_DIGESTS_PRESERVED=%s\n' "${#PENDING_DIGEST_PATHS[@]}"
 printf 'DATABASE_MIGRATIONS_EXECUTED=false\n'
 printf 'ROLLBACK_PERFORMED=false\n'
 
-if (( KEEP_TIMER_DISABLED == 0 )); then
-    printf 'TIMER_ENABLED=%s\n' "$(systemctl is-enabled hermes-tech-pull-deploy.timer 2>/dev/null || true)"
-    printf 'TIMER_ACTIVE=%s\n' "$(systemctl is-active hermes-tech-pull-deploy.timer 2>/dev/null || true)"
-else
-    printf 'TIMER_ENABLED=disabled\n'
-    printf 'TIMER_ACTIVE=inactive\n'
-fi
+printf 'PULL_DEPLOY_TIMER_MUTATED=false\n'

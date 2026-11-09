@@ -113,6 +113,23 @@ class PublicationReadinessFixtureTests(unittest.TestCase):
         self.assertEqual(sha256(db.read_bytes()).hexdigest(), db_before)
         self.assertEqual(sha256(digest.read_bytes()).hexdigest(), digest_before)
 
+    def test_stale_runtime_range_gets_actionable_reason_without_exact_state(self) -> None:
+        production_sha, target_sha = self._advance_remote()
+        with patch.object(
+            MODULE,
+            "_classify_stale_range",
+            return_value="RUNTIME_ROLLOUT_REQUIRED",
+        ) as classify:
+            result = MODULE.check_git_and_deploy_state(self.prod, self.state_root)
+
+        self.assertFalse(result.ready)
+        self.assertEqual(result.reason, "RUNTIME_ROLLOUT_REQUIRED")
+        classify.assert_called_once_with(
+            self.prod,
+            production_sha=production_sha,
+            target_sha=target_sha,
+        )
+
     def test_exact_blocked_deploy_reason_is_propagated_before_pipeline(self) -> None:
         for reason in (
             "WAIT_CI",

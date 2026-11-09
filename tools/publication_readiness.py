@@ -149,6 +149,50 @@ def _state_reason_for_range(
     return None
 
 
+def _classify_stale_range(
+    root: Path,
+    *,
+    production_sha: str,
+    target_sha: str,
+) -> str | None:
+    """Return an actionable blocked reason from the exact stale Git range.
+
+    The fallback is read-only and intentionally advisory: an exact persisted
+    readiness reason still wins. Classification failure leaves the older generic
+    PRODUCTION_BEHIND_MAIN result intact rather than weakening the gate.
+    """
+    classifier = root / "tools" / "classify_deploy_impact.py"
+    if not classifier.is_file() or classifier.is_symlink():
+        return None
+
+    proc = _run(
+        [
+            sys.executable,
+            str(classifier),
+            "--base",
+            production_sha,
+            "--target",
+            target_sha,
+            "--json",
+        ],
+        cwd=root,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    classification = payload.get("classification")
+    mapping = {
+        "CONTROL_PLANE_APPROVAL_REQUIRED": "WAIT_CONTROL_PLANE_APPROVAL",
+        "RUNTIME_ROLLOUT_REQUIRED": "RUNTIME_ROLLOUT_REQUIRED",
+        "DB_APPLY_REQUIRES_SEPARATE_APPROVAL": "DB_APPLY_REQUIRES_SEPARATE_APPROVAL",
+    }
+    return mapping.get(classification)
+
+
 def check_git_and_deploy_state(root: Path, state_root: Path) -> ReadinessResult:
     production_sha = "unknown"
     target_sha = "unknown"
@@ -207,7 +251,13 @@ def check_git_and_deploy_state(root: Path, state_root: Path) -> ReadinessResult:
             )
             return ReadinessResult(
                 False,
-                reason or "PRODUCTION_BEHIND_MAIN",
+                reason
+                or _classify_stale_range(
+                    root,
+                    production_sha=production_sha,
+                    target_sha=target_sha,
+                )
+                or "PRODUCTION_BEHIND_MAIN",
                 target_sha,
                 production_sha,
                 "production HEAD does not equal current origin/main",

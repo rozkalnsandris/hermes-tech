@@ -1,8 +1,10 @@
 # Manual runtime/dependency rollout
 
 Hermes Tech intentionally does **not** auto-deploy a `main` revision classified
-`RUNTIME_ROLLOUT_REQUIRED`. The recurring pull-deploy timer reports that state and
-Telegram alerts the operator, but the Python/dependency transition requires an
+`RUNTIME_ROLLOUT_REQUIRED`. After the SIMPLE-DEPLOY web cutover the legacy
+pull-deploy timer may remain retired; the daily publication gate still fails
+closed on a stale runtime and classifies the exact `production..main` range when
+no exact readiness state exists. The Python/dependency transition requires an
 explicit exact-SHA manual action.
 
 The repository-owned entrypoint is:
@@ -48,7 +50,7 @@ Before production mutation the helper requires all of the following:
 No `sqlite_schema.py apply` operation exists in this path. A DB-sensitive target
 must use its separately authorized schema workflow.
 
-## Apply and rollback
+## Apply and fail-stop
 
 The production venv is never moved from a candidate path. The old venv is first
 retained under the private runtime-backup directory, then the new venv is rebuilt
@@ -65,19 +67,24 @@ Post-apply checks require:
 - unchanged live SQLite SHA256 and unchanged pending-digest SHA256 values;
 - public HTTPS health.
 
-Any failure after the mutation boundary triggers phase-safe rollback of the
-public tree, Git SHA and old production venv, followed by DB/digest immutability
-and public-site verification. Rollback state variables are initialized before
-any mutation so an early failure cannot trip `set -u` while attempting recovery.
+Any failure preserves the observed production state and evidence and stops.
+There is no automatic rollback, cleanup, retry, reset, or alternate mutation
+path after a failed rollout. The retained old venv and temporary public-tree
+backup are recovery evidence only; using them requires a new exact owner
+authorization.
 
 ## Control-plane handoff
 
-If the runtime target also changes `.github/workflows/**`, `tools/pull-deploy/**`,
-`tools/ci.sh`, the deploy classifier, or pull-deploy systemd units, the manual
-runtime rollout may reach the exact target but intentionally leaves the recurring
-timer disabled and records `WAIT_CONTROL_PLANE_APPROVAL`. Run the existing
-`activate-pull-deploy.sh` exact-SHA canary next; only that activation may install
-and enable the changed control plane.
+The SIMPLE-DEPLOY web cutover retires the legacy pull-deploy timer, so a runtime
+rollout never enables, disables, starts, stops, or restores that timer/service.
+
+If the runtime target also changes `tools/pull-deploy/**`, the deploy classifier,
+or pull-deploy systemd units, install the exact target control-plane files first
+under a separately authorized host mutation. The installer records
+`installed-control-plane-sha` but does not enable the retired timer. During the
+runtime rollout, an exact installed-control-plane marker equal to the target SHA
+allows readiness to be recorded as `CURRENT`; otherwise the helper records
+`WAIT_CONTROL_PLANE_APPROVAL` and stops short of claiming publication readiness.
 
 ## Trusted Python source boundary
 
