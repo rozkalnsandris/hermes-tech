@@ -6,7 +6,7 @@ umask 077
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SYNC="$ROOT/sync_generated_content.sh"
-HELPER="$ROOT/tools/pull-deploy/deploy_readiness.py"
+HELPER="$ROOT/tools/publication_readiness_reconcile.py"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 export HERMES_GIT_SYNC_TIMEOUT_SECONDS=5
@@ -25,9 +25,10 @@ git init --quiet --initial-branch=main "$seed"
 git -C "$seed" config user.name "$GIT_AUTHOR_NAME"
 git -C "$seed" config user.email "$GIT_AUTHOR_EMAIL"
 mkdir -p "$seed/tools/pull-deploy"
-cp "$HELPER" "$seed/tools/pull-deploy/deploy_readiness.py"
+cp "$HELPER" "$seed/tools/publication_readiness_reconcile.py"
+cp "$ROOT/tools/pull-deploy/deploy_readiness.py" "$seed/tools/pull-deploy/deploy_readiness.py"
 printf 'baseline\n' > "$seed/base.txt"
-git -C "$seed" add -- base.txt tools/pull-deploy/deploy_readiness.py
+git -C "$seed" add -- base.txt tools/publication_readiness_reconcile.py tools/pull-deploy/deploy_readiness.py
 git -C "$seed" commit --quiet -m 'Initial fixture with readiness helper'
 git -C "$seed" remote add origin "$remote"
 git -C "$seed" push --quiet origin main
