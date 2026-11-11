@@ -471,6 +471,81 @@ def record(
     return changed, payload
 
 
+
+def _publication_base_state(
+    state_root: Path, expected_base_sha: str,
+) -> dict[str, object]:
+    """Read the exact previously approved CURRENT state, without changing it."""
+    if SHA_RE.fullmatch(expected_base_sha) is None:
+        raise ValueError("invalid expected publication base SHA")
+    if state_root.is_symlink():
+        raise RuntimeError("readiness state root is unsafe")
+    state = load_state(state_root / STATE_FILENAME)
+    if (
+        state is None
+        or state.get("schema_version") != SCHEMA_VERSION
+        or state.get("reason") != "CURRENT"
+        or state.get("deploy_impact") != "NO_DEPLOY"
+        or any(
+            state.get(key) != expected_base_sha
+            for key in ("main_sha", "target_sha", "production_sha")
+        )
+    ):
+        raise RuntimeError("publication base is not exact CURRENT NO_DEPLOY")
+    return state
+
+
+def verify_publication_base(*, state_root: Path, expected_base_sha: str) -> None:
+    """Fail before publication if a concurrent deploy changed readiness."""
+    _publication_base_state(state_root, expected_base_sha)
+
+
+def advance_published(
+    *, state_root: Path, expected_base_sha: str, published_sha: str,
+) -> tuple[bool, dict[str, object]]:
+    """CAS-advance CURRENT only after the publisher has verified its exact push.
+
+    The caller must have already verified a single allowlisted publication commit,
+    parent == expected_base_sha, and local HEAD == remote main == published_sha.
+    This operation never converts WAIT_*/DEPLOY_FAILED into CURRENT.
+    """
+    if SHA_RE.fullmatch(published_sha) is None:
+        raise ValueError("invalid published SHA")
+    if published_sha == expected_base_sha:
+        raise ValueError("publication SHA must advance")
+    if state_root.is_symlink():
+        raise RuntimeError("readiness state root is unsafe")
+
+    with state_write_lock(state_root):
+        current = load_state(state_root / STATE_FILENAME)
+        if (
+            current is not None
+            and current.get("schema_version") == SCHEMA_VERSION
+            and current.get("reason") == "CURRENT"
+            and current.get("deploy_impact") == "NO_DEPLOY"
+            and all(
+                current.get(key) == published_sha
+                for key in ("main_sha", "target_sha", "production_sha")
+            )
+        ):
+            return False, current
+
+        previous = _publication_base_state(state_root, expected_base_sha)
+        now = utc_now()
+        payload = dict(previous)
+        payload.update(
+            main_sha=published_sha,
+            target_sha=published_sha,
+            production_sha=published_sha,
+            first_seen_utc=now,
+            last_seen_utc=now,
+            watchdog_level=WATCHDOG_LEVEL_NONE,
+            watchdog_escalation_key="",
+        )
+        atomic_write_json(state_root / STATE_FILENAME, payload)
+        return True, payload
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -488,6 +563,15 @@ def build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--production-sha", required=True)
     record_parser.add_argument("--no-notify", action="store_true")
 
+    verify_parser = sub.add_parser("verify-publish-base")
+    verify_parser.add_argument("--state-root", required=True, type=Path)
+    verify_parser.add_argument("--base-sha", required=True)
+
+    advance_parser = sub.add_parser("advance-published")
+    advance_parser.add_argument("--state-root", required=True, type=Path)
+    advance_parser.add_argument("--base-sha", required=True)
+    advance_parser.add_argument("--published-sha", required=True)
+
     show_parser = sub.add_parser("show")
     show_parser.add_argument("--state-root", required=True, type=Path)
 
@@ -499,6 +583,22 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "verify-publish-base":
+            verify_publication_base(
+                state_root=args.state_root,
+                expected_base_sha=args.base_sha,
+            )
+            print("READINESS_PUBLISH_BASE=PASS")
+            return 0
+        if args.command == "advance-published":
+            changed, payload = advance_published(
+                state_root=args.state_root,
+                expected_base_sha=args.base_sha,
+                published_sha=args.published_sha,
+            )
+            print(f"READINESS_PUBLISHED_ADVANCE={'CHANGED' if changed else 'UNCHANGED'}")
+            print(f"TARGET_SHA={payload['target_sha']}")
+            return 0
         if args.command == "record":
             record(
                 state_root=args.state_root,
