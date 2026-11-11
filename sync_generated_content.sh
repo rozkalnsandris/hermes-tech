@@ -82,6 +82,32 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || fail \
     "komanda nav palaista Git repozitorijā"
 cd "$repo_root"
 
+# The production checkout has the readiness helper; isolated Git fixtures may
+# intentionally omit it. An explicitly selected state root must never be skipped.
+READINESS_HELPER="$repo_root/tools/pull-deploy/deploy_readiness.py"
+READINESS_STATE_ROOT="${HERMES_TECH_DEPLOY_STATE_ROOT:-$HOME/.local/state/hermes-tech-main-deploy}"
+
+readiness_available() {
+    if [[ -f "$READINESS_HELPER" && ! -L "$READINESS_HELPER" ]]; then
+        [[ -f "$READINESS_STATE_ROOT/readiness.json" ]] || fail \
+            "production readiness state missing; publication must stop"
+        require_command python3
+        return 0
+    fi
+    [[ -z "${HERMES_TECH_DEPLOY_STATE_ROOT:-}" ]] || fail \
+        "explicit readiness state root requires a tracked readiness helper"
+    return 1
+}
+
+assert_publication_readiness_base() {
+    local base_sha=$1
+    if readiness_available; then
+        python3 "$READINESS_HELPER" verify-publish-base \
+            --state-root "$READINESS_STATE_ROOT" --base-sha "$base_sha" >&2 \
+            || fail "readiness is not CURRENT NO_DEPLOY for publication base $base_sha"
+    fi
+}
+
 current_branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
 [[ "$current_branch" == "$BRANCH" ]] || fail \
     "vajadzīgs zars '$BRANCH', pašreizējais ir '${current_branch:-detached}'"
@@ -239,6 +265,7 @@ case "$mode" in
         remote_sha=$(git rev-parse "refs/remotes/$REMOTE/$BRANCH")
         [[ "$local_sha" == "$remote_sha" ]] || relation_error \
             "$local_sha" "$remote_sha"
+        assert_publication_readiness_base "$local_sha"
         printf '%s\n' "$local_sha"
         ;;
 
@@ -288,6 +315,7 @@ case "$mode" in
             changed_count=$((changed_count + 1))
         done < <(git diff-tree --no-commit-id --name-only -r "$expected_commit")
         (( changed_count > 0 )) || fail "publication commits ir tukšs"
+        assert_publication_readiness_base "$expected_base"
 
         fetch_remote
         remote_sha=$(git rev-parse "refs/remotes/$REMOTE/$BRANCH")
@@ -341,6 +369,17 @@ case "$mode" in
             "pēc push remote SHA neatbilst: expected=$expected_commit remote=$remote_sha"
         [[ "$local_sha" == "$remote_sha" ]] || fail \
             "pēc push local/remote SHA neatbilst: local=$local_sha remote=$remote_sha"
+
+        # Compare-and-swap the previous exact CURRENT state only after the
+        # allowlisted single-commit push and both SHA checks have succeeded.
+        # The readiness lock protects against a concurrent blocked deploy state.
+        if readiness_available; then
+            python3 "$READINESS_HELPER" advance-published \
+                --state-root "$READINESS_STATE_ROOT" \
+                --base-sha "$expected_base" \
+                --published-sha "$expected_commit" \
+                || fail "GitHub push succeeded but readiness advancement failed; no retry"
+        fi
 
         printf 'HERMES_GIT_SYNC_OK local=%s remote=%s\n' \
             "$local_sha" "$remote_sha"
