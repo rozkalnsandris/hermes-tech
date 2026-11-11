@@ -84,7 +84,7 @@ cd "$repo_root"
 
 # The production checkout has the readiness helper; isolated Git fixtures may
 # intentionally omit it. An explicitly selected state root must never be skipped.
-READINESS_HELPER="$repo_root/tools/pull-deploy/deploy_readiness.py"
+READINESS_HELPER="$repo_root/tools/publication_readiness_reconcile.py"
 READINESS_STATE_ROOT="${HERMES_TECH_DEPLOY_STATE_ROOT:-$HOME/.local/state/hermes-tech-main-deploy}"
 
 readiness_available() {
