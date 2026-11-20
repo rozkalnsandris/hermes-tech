@@ -286,5 +286,126 @@ class DigestResponseResilienceTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
 
 
+    def _four_complete_sections(self):
+        """Four real sections and five selected IDs; the fifth is truly absent."""
+        return {
+            "selected_ids": [1, 2, 3, 4, 5],
+            "digest": "\n\n".join(
+                f"## Headline {index}\n\n"
+                f"Candidate-supported summary {index}.\n\n"
+                f"[Source {index}](https://example.com/{index})\n\n"
+                "💬 Hermes: A meaningful operational caveat supported by this source."
+                for index in range(1, 5)
+            ),
+        }
+
+    @staticmethod
+    def _focused_section(article_id=5, url=None):
+        url = url or f"https://example.com/{article_id}"
+        return {
+            "selected_ids": [article_id],
+            "digest": (
+                f"## Headline {article_id}\n\n"
+                "Candidate-supported factual summary.\n\n"
+                f"[Source {article_id}]({url})\n\n"
+                "💬 Hermes: This changes the operational trade-off for readers."
+            ),
+        }
+
+    def test_focused_repair_appends_only_missing_selected_article(self):
+        invalid = self._four_complete_sections()
+        core, calls, logs = self.make_core(
+            [invalid, invalid, invalid, self._focused_section()]
+        )
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            payload = json.loads(
+                core.call_deepseek("key", "system", self.candidate_prompt())
+            )
+
+        self.assertEqual(payload["selected_ids"], [1, 2, 3, 4, 5])
+        self.assertEqual(len(self.url_extractor(payload["digest"])), 5)
+        self.assertEqual(payload["digest"].count("💬 Hermes:"), 5)
+        self.assertEqual(payload["digest"].count("## Headline"), 5)
+        self.assertEqual(len(calls), 4)
+        self.assertIn("FOCUSED", calls[3 - 0].upper())
+        self.assertIn(resilience.ARTICLE_DATA_BEGIN, calls[3])
+        self.assertIn('"id": 5', calls[3])
+        self.assertNotIn('"id": 4', calls[3])
+        self.assertNotIn(resilience.PREVIOUS_DIGEST_BEGIN, calls[3])
+        self.assertTrue(any("focused single-item completion succeeded" in line for line in logs))
+        self.assertFalse(any(invalid["digest"] in line for line in logs))
+
+    def test_focused_repair_refuses_unrecognized_fifth_section(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] += (
+            "\n\n## Fifth headline\n\nFifth summary without a canonical source.\n\n"
+            "💬 Hermes: Another analysis paragraph."
+        )
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_refuses_hidden_fifth_markdown_link(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] += (
+            "\n\n**Source:** [Source 5](https://example.com/5)"
+        )
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_refuses_source_outside_selected_ids(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] = invalid["digest"].replace(
+            "[Source 4](https://example.com/4)",
+            "[Source 4](https://example.com/unselected)",
+        )
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_rejects_wrong_source_without_more_calls(self):
+        invalid = self._four_complete_sections()
+        wrong = self._focused_section(url="https://example.com/invented")
+        core, calls, _ = self.make_core([invalid, invalid, invalid, wrong])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "focused digest repair source URL mismatch"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 4)
+
+    def test_focused_repair_rejects_wrong_selected_id(self):
+        invalid = self._four_complete_sections()
+        wrong = self._focused_section(article_id=4)
+        core, calls, _ = self.make_core([invalid, invalid, invalid, wrong])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "focused digest repair selected unexpected"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
