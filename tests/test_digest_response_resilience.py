@@ -330,7 +330,7 @@ class DigestResponseResilienceTests(unittest.TestCase):
         self.assertEqual(payload["digest"].count("💬 Hermes:"), 5)
         self.assertEqual(payload["digest"].count("## Headline"), 5)
         self.assertEqual(len(calls), 4)
-        self.assertIn("FOCUSED", calls[3 - 0].upper())
+        self.assertIn("Write exactly ONE missing article section", calls[3])
         self.assertIn(resilience.ARTICLE_DATA_BEGIN, calls[3])
         self.assertIn('"id": 5', calls[3])
         self.assertNotIn('"id": 4', calls[3])
