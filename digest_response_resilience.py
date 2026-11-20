@@ -145,9 +145,61 @@ def _previous_digest_repair_context(payload: dict[str, Any]) -> str:
 
 
 
+
+def _focused_article_heading(digest: str, expected: int) -> str | None:
+    """Recognize only the heading structures used by accepted Hermes digests.
+
+    A digest may use '# title' + '## stories', '## title' + '### stories',
+    or just four story headings. Any fifth/extra heading fails closed.
+    """
+    headings = re.findall(r"(?m)^(#{1,6})[ \t]+([^\n]+)", digest)
+    if len(headings) == expected - 1:
+        levels = [level for level, _ in headings]
+        if levels == ["##"] * (expected - 1):
+            return "##"
+        if levels == ["###"] * (expected - 1):
+            return "###"
+    if len(headings) != expected:
+        return None
+    title_level, title = headings[0]
+    if re.fullmatch(
+        r"What mattered in (?:DevOps|AI agents|AI) yesterday"
+        r"(?:[ \t]+—[ \t]+\d{4}-\d{2}-\d{2})?",
+        title.strip(),
+    ) is None:
+        return None
+    levels = [level for level, _ in headings[1:]]
+    if title_level == "#" and levels == ["##"] * (expected - 1):
+        return "##"
+    if title_level == "##" and levels == ["###"] * (expected - 1):
+        return "###"
+    return None
+
+
+def _focused_shape_diagnostic(core: Any, payload: dict[str, Any]) -> str:
+    """Only structural counts; never log model text, selected IDs or URLs."""
+    digest = payload.get("digest")
+    selected = payload.get("selected_ids")
+    if not isinstance(digest, str):
+        return "digest_not_string"
+    levels = re.findall(r"(?m)^(#{1,6})[ \t]+\S", digest)
+    hermes = re.findall(r"(?m)^[ \t]*(?:💬[ \t]*)?Hermes:[ \t]*", digest)
+    markdown_links = re.findall(r"\[[^\]\n]+\]\(https?://[^\s)\n]+\)", digest)
+    extractor = getattr(core, "_extract_digest_source_candidates", None)
+    recognized = len(extractor(digest)) if callable(extractor) else -1
+    count_selected = len(selected) if isinstance(selected, list) else -1
+    return (
+        f"selected={count_selected}, headings_h1={levels.count('#')}, "
+        f"headings_h2={levels.count('##')}, headings_h3={levels.count('###')}, "
+        f"headings_other={sum(level not in ('#', '##', '###') for level in levels)}, "
+        f"hermes={len(hermes)}, markdown_links={len(markdown_links)}, "
+        f"recognized_sources={recognized}"
+    )
+
+
 def _focused_repair_candidate(
     core: Any, payload: dict[str, Any], user: str, expected: int,
-) -> dict[str, Any] | None:
+) -> tuple[dict[str, Any], str] | None:
     """Identify one omitted *selected* article only from an unambiguous 4/5 draft.
 
     A malformed fifth source, mismatched selected ID, or a fifth written section
@@ -170,19 +222,10 @@ def _focused_repair_candidate(
     sources = extractor(digest)
     if len(sources) != expected - 1:
         return None
-    # Four links and analyses do not prove that the fifth article is absent.
-    # Accept four H2 article headings, with one optional *known* H1 title.
-    # Unexpected H1/H3-H6 headings (including an unlinked fifth article) fail closed.
-    heading_levels = re.findall(r"(?m)^(#{1,6})[ \t]+\S", digest)
-    has_expected_title = re.match(
-        r"\A#[ \t]+What mattered in (?:AI agents|AI|DevOps) yesterday"
-        r"(?:[ \t]+—[ \t]+\d{4}-\d{2}-\d{2})?[ \t]*(?:\n|$)",
-        digest,
-    ) is not None
-    allowed_headings = (["#"] if has_expected_title else []) + ["##"] * (
-        expected - 1
-    )
-    if heading_levels != allowed_headings:
+    # The previously supported strict H2-only guard rejected real Hermes
+    # layouts that use an H2 digest title followed by H3 story headings.
+    heading_level = _focused_article_heading(digest, expected)
+    if heading_level is None:
         return None
     if len(re.findall(r"(?m)^[ \t]*(?:💬[ \t]*)?Hermes:[ \t]*", digest)) != expected - 1:
         return None
@@ -253,7 +296,7 @@ def _focused_repair_candidate(
     # This is untrusted text. Keep the final focused input bounded.
     if len(json.dumps(factual_fields, ensure_ascii=False)) > 5000:
         return None
-    return factual_fields
+    return factual_fields, heading_level
 
 
 def _complete_focused_item(
@@ -265,6 +308,7 @@ def _complete_focused_item(
     payload: dict[str, Any],
     candidate: dict[str, Any],
     candidate_urls: set[str] | None,
+    heading_level: str,
 ) -> str:
     """One additional model call only, then validate a strict 4+1 composition."""
     article_id = candidate["id"]
@@ -278,7 +322,8 @@ def _complete_focused_item(
     focused_user = (
         "Write exactly ONE missing article section for the daily Hermes Tech "
         "digest in the same editorial voice. Four other sections already exist; "
-        "do not repeat, rewrite, or summarize them. Write a ## heading, "
+        "do not repeat, rewrite, or summarize them. Write a " 
+        f"{heading_level} heading, "
         "2-3 factual summary sentences, exactly one standalone source Markdown "
         "link copied from the candidate link, and one substantive '💬 Hermes:' "
         "analysis paragraph meeting the system's analysis depth requirements. "
@@ -300,7 +345,7 @@ def _complete_focused_item(
     section = focused.get("digest")
     if not isinstance(section, str) or not section.strip():
         raise RuntimeError("focused digest repair returned no section")
-    if re.findall(r"(?m)^(#{1,6})[ \t]+\S", section) != ["##"]:
+    if re.findall(r"(?m)^(#{1,6})[ \t]+\S", section) != [heading_level]:
         raise RuntimeError("focused digest repair must contain exactly one heading")
     if len(re.findall(r"(?m)^[ \t]*(?:💬[ \t]*)?Hermes:[ \t]*", section)) != 1:
         raise RuntimeError("focused digest repair must contain one Hermes analysis")
@@ -429,16 +474,21 @@ def install_digest_response_resilience(core: Any) -> None:
                 f"{issue}; atbilde noraidīta"
             )
             if attempt >= SEMANTIC_MAX_ATTEMPTS:
-                candidate = _focused_repair_candidate(core, payload, user, expected)
-                if candidate is not None:
+                repair = _focused_repair_candidate(core, payload, user, expected)
+                if repair is not None:
+                    candidate, heading_level = repair
                     core.log(
                         "DeepSeek digest focused completion for one missing "
                         "selected item after semantic attempts exhausted"
                     )
                     return _complete_focused_item(
                         original, core, api_key, system, user, payload,
-                        candidate, candidate_urls,
+                        candidate, candidate_urls, heading_level,
                     )
+                core.log(
+                    "DeepSeek digest focused completion ineligible: "
+                    + _focused_shape_diagnostic(core, payload)
+                )
                 raise RuntimeError(
                     "DeepSeek digest semantic retry izsmelts: " + issue
                 )

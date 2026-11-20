@@ -472,5 +472,87 @@ class DigestResponseResilienceTests(unittest.TestCase):
         self.assertEqual(len(calls), 4)
 
 
+    def _h3_four_sections(self):
+        """Existing published format: H2 digest title, H3 per-item headings."""
+        base = self._four_complete_sections()
+        base["digest"] = (
+            "## What mattered in AI yesterday — 2026-11-20\n\n"
+            + base["digest"].replace("## Headline", "### Headline")
+        )
+        return base
+
+    def test_focused_repair_accepts_h2_title_and_h3_articles(self):
+        invalid = self._h3_four_sections()
+        focused = self._focused_section()
+        focused["digest"] = focused["digest"].replace("## Headline", "### Headline")
+        core, calls, logs = self.make_core([invalid, invalid, invalid, focused])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            result = json.loads(
+                core.call_deepseek("key", "system", self.candidate_prompt())
+            )
+        self.assertEqual(result["selected_ids"], [1, 2, 3, 4, 5])
+        self.assertEqual(result["digest"].count("### Headline"), 5)
+        self.assertEqual(len(self.url_extractor(result["digest"])), 5)
+        self.assertEqual(len(calls), 4)
+        self.assertIn("Write a ### heading", calls[3])
+        self.assertNotIn("focused completion ineligible", "\n".join(logs))
+
+    def test_focused_repair_accepts_four_h3_sections_without_title(self):
+        invalid = self._h3_four_sections()
+        invalid["digest"] = invalid["digest"].split("\n\n", 1)[1]
+        focused = self._focused_section()
+        focused["digest"] = focused["digest"].replace("## Headline", "### Headline")
+        core, calls, _ = self.make_core([invalid, invalid, invalid, focused])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            result = json.loads(
+                core.call_deepseek("key", "system", self.candidate_prompt())
+            )
+        self.assertEqual(result["digest"].count("### Headline"), 5)
+        self.assertEqual(len(calls), 4)
+
+    def test_focused_repair_refuses_unlinked_fifth_h3_article(self):
+        invalid = self._h3_four_sections()
+        invalid["digest"] += "\n\n### Fifth article\n\nUnlinked summary."
+        core, calls, logs = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(any("headings_h2=1, headings_h3=5" in line for line in logs))
+        self.assertFalse(any(invalid["digest"] in line for line in logs))
+
+    def test_focused_repair_refuses_wrong_h2_heading_for_h3_completion(self):
+        invalid = self._h3_four_sections()
+        core, calls, _ = self.make_core([
+            invalid, invalid, invalid, self._focused_section()
+        ])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "exactly one heading"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 4)
+
+    def test_focused_repair_refuses_ambiguous_mixed_heading_levels(self):
+        invalid = self._h3_four_sections()
+        invalid["digest"] = invalid["digest"].replace(
+            "### Headline 4", "## Headline 4"
+        )
+        core, calls, logs = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(any("focused completion ineligible" in x for x in logs))
+
+
 if __name__ == "__main__":
     unittest.main()
