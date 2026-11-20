@@ -407,5 +407,70 @@ class DigestResponseResilienceTests(unittest.TestCase):
         self.assertEqual(len(calls), 4)
 
 
+    def test_focused_repair_accepts_optional_canonical_title(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] = (
+            "# What mattered in AI yesterday — 2026-11-20\n\n"
+            + invalid["digest"]
+        )
+        core, calls, _ = self.make_core(
+            [invalid, invalid, invalid, self._focused_section()]
+        )
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            result = json.loads(
+                core.call_deepseek("key", "system", self.candidate_prompt())
+            )
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(result["digest"].count("## Headline"), 5)
+        self.assertTrue(result["digest"].startswith("# What mattered in AI"))
+
+    def test_focused_repair_refuses_fifth_unlinked_heading(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] += "\n\n## Fifth unlinked article\n\nUnlinked summary."
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_refuses_unknown_h1_fifth_article(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] += "\n\n# Fifth unlinked story\n\nAnother summary."
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_refuses_unexpected_nested_heading(self):
+        invalid = self._four_complete_sections()
+        invalid["digest"] += "\n\n### Unrequested nested topic"
+        core, calls, _ = self.make_core([invalid, invalid, invalid])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "semantic retry izsmelts"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 3)
+
+    def test_focused_repair_refuses_h3_instead_of_h2(self):
+        invalid = self._four_complete_sections()
+        focused = self._focused_section()
+        focused["digest"] = focused["digest"].replace("## Headline", "### Headline")
+        core, calls, _ = self.make_core([invalid, invalid, invalid, focused])
+        core._extract_digest_source_candidates = self.url_extractor
+        resilience.install_digest_response_resilience(core)
+        with mock.patch.object(resilience.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, "exactly one heading"):
+                core.call_deepseek("key", "system", self.candidate_prompt())
+        self.assertEqual(len(calls), 4)
+
+
 if __name__ == "__main__":
     unittest.main()
