@@ -170,6 +170,20 @@ def _focused_repair_candidate(
     sources = extractor(digest)
     if len(sources) != expected - 1:
         return None
+    # Four links and analyses do not prove that the fifth article is absent.
+    # Accept four H2 article headings, with one optional *known* H1 title.
+    # Unexpected H1/H3-H6 headings (including an unlinked fifth article) fail closed.
+    heading_levels = re.findall(r"(?m)^(#{1,6})[ \t]+\S", digest)
+    has_expected_title = re.match(
+        r"\A#[ \t]+What mattered in (?:AI agents|AI|DevOps) yesterday"
+        r"(?:[ \t]+—[ \t]+\d{4}-\d{2}-\d{2})?[ \t]*(?:\n|$)",
+        digest,
+    ) is not None
+    allowed_headings = (["#"] if has_expected_title else []) + ["##"] * (
+        expected - 1
+    )
+    if heading_levels != allowed_headings:
+        return None
     if len(re.findall(r"(?m)^[ \t]*(?:💬[ \t]*)?Hermes:[ \t]*", digest)) != expected - 1:
         return None
     # Do not append a sixth story when the fifth source exists in a format the
@@ -286,7 +300,7 @@ def _complete_focused_item(
     section = focused.get("digest")
     if not isinstance(section, str) or not section.strip():
         raise RuntimeError("focused digest repair returned no section")
-    if len(re.findall(r"(?m)^#{2,3}[ \t]+\S", section)) != 1:
+    if re.findall(r"(?m)^(#{1,6})[ \t]+\S", section) != ["##"]:
         raise RuntimeError("focused digest repair must contain exactly one heading")
     if len(re.findall(r"(?m)^[ \t]*(?:💬[ \t]*)?Hermes:[ \t]*", section)) != 1:
         raise RuntimeError("focused digest repair must contain one Hermes analysis")
